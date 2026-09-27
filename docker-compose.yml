@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: outpass-db
+    environment:
+      POSTGRES_USER: outpass
+      POSTGRES_PASSWORD: outpass
+      POSTGRES_DB: outpass
+    ports:
+      - "5433:5432"
+    volumes:
+      - outpass_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U outpass"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  outpass_pgdata:

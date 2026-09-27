@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.env
+*.log
+.dart_tool/
+.flutter-plugins*
+.packages
+build/
+.idea/
+.vscode/
+.DS_Store
+nohup.out
+.pgdata/
+.pg.log
+apps/api/public/
+.freebuff/

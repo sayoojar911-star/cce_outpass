@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  TUTOR
+  HOD
+  GUARD
+  ADMIN
+}
+
+enum OutpassStatus {
+  PENDING_TUTOR
+  PENDING_HOD
+  APPROVED
+  EXITED
+  RETURNED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  OVERDUE
+}
+
+enum OutpassType {
+  NORMAL
+  EMERGENCY
+}
+
+enum Decision {
+  APPROVED
+  REJECTED
+}
+
+enum ScanDirection {
+  EXIT
+  ENTRY
+}
+
+model User {
+  id        String    @id @default(uuid())
+  name      String
+  role      Role
+  mobile    String    @unique
+  department String?
+  status    String    @default("ACTIVE")
+  student   Student?
+  devices   Device[]
+  sessions  Session[]
+  tutorOf   Student[] @relation("TutorStudents")
+  createdAt DateTime  @default(now())
+}
+
+model Student {
+  userId     String           @id
+  user       User             @relation(fields: [userId], references: [id])
+  registerNo String           @unique
+  department String
+  semester   Int
+  tutorId    String?
+  tutor      User?            @relation("TutorStudents", fields: [tutorId], references: [id])
+  outpasses  OutpassRequest[]
+}
+
+model Device {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  platform   String    @default("web")
+  publicKey  String
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Otp {
+  id        String    @id @default(uuid())
+  mobile    String
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([mobile, createdAt])
+}
+
+model Session {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  refreshTokenHash String  @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+}
+
+model OutpassRequest {
+  id               String        @id @default(uuid())
+  displayId        String        @unique
+  studentId        String
+  student          Student       @relation(fields: [studentId], references: [userId])
+  type             OutpassType   @default(NORMAL)
+  status           OutpassStatus @default(PENDING_TUTOR)
+  requestedExitAt  DateTime
+  expectedReturnAt DateTime
+  destination      String
+  purposeCategory  String
+  purposeText      String?
+  validFrom        DateTime?
+  validUntil       DateTime?
+  exitAt           DateTime?
+  entryAt          DateTime?
+  exitGateId       String?
+  entryGateId      String?
+  lastTokenTs      BigInt        @default(0)
+  version          Int           @default(1)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  approvals        Approval[]
+  gateEvents       GateEvent[]
+
+  @@index([status])
+  @@index([studentId, createdAt])
+  @@index([validUntil])
+}
+
+model Approval {
+  id          String   @id @default(uuid())
+  requestId   String
+  request     OutpassRequest @relation(fields: [requestId], references: [id])
+  stage       String
+  approverId  String
+  decision    Decision
+  comment     String?
+  decidedAt   DateTime @default(now())
+
+  @@unique([requestId, stage])
+}
+
+model Gate {
+  id               String @id @default(uuid())
+  name             String
+  directionDefault String @default("BOTH")
+}
+
+model GateEvent {
+  id           String        @id @default(uuid())
+  outpassId    String?
+  request      OutpassRequest? @relation(fields: [outpassId], references: [id])
+  gateId       String
+  guardId      String
+  deviceId     String
+  direction    ScanDirection
+  resultCode   String
+  offline      Boolean       @default(false)
+  detail       String?
+  clientScanId String        @unique
+  scannedAt    DateTime      @default(now())
+
+  @@index([guardId, scannedAt])
+}
+
+model AuditLog {
+  id         BigInt    @id @default(autoincrement())
+  at         DateTime  @default(now())
+  actorId    String?
+  actorRole  String?
+  action     String
+  objectType String
+  objectId   String?
+  detail     String?
+  prevHash   String?
+  hash       String?
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
