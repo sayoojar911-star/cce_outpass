@@ -3,98 +3,48 @@ import { PrismaClient, Role } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  const tutor = await prisma.user.upsert({
-    where: { mobile: '9000000001' },
-    update: {},
+  const adminPhone = process.env.ADMIN_PHONE || '8921578838';
+
+  const admin = await prisma.user.upsert({
+    where: { mobile: adminPhone },
+    update: { role: Role.ADMIN, status: 'ACTIVE' },
     create: {
-      name: 'Dr. Anand Kumar',
-      role: Role.TUTOR,
-      mobile: '9000000001',
-      department: 'CSE',
+      name: 'System Administrator',
+      role: Role.ADMIN,
+      mobile: adminPhone,
+      status: 'ACTIVE',
     },
   });
 
-  const hod = await prisma.user.upsert({
-    where: { mobile: '9000000002' },
-    update: {},
-    create: {
-      name: 'Dr. Priya Menon',
-      role: Role.HOD,
-      mobile: '9000000002',
-      department: 'CSE',
-    },
-  });
-
-  const guard = await prisma.user.upsert({
-    where: { mobile: '9000000090' },
-    update: {},
-    create: {
-      name: 'Suresh (Security)',
-      role: Role.GUARD,
-      mobile: '9000000090',
-    },
-  });
-
-  const studentData = [
-    { name: 'Ananya S', registerNo: 'CCE25CS001', mobile: '9000000010', semester: 3 },
-    { name: 'Arjun R', registerNo: 'CCE25CS002', mobile: '9000000011', semester: 3 },
-  ];
-
-  for (const s of studentData) {
-    const user = await prisma.user.upsert({
-      where: { mobile: s.mobile },
-      update: {},
-      create: { name: s.name, role: Role.STUDENT, mobile: s.mobile, department: 'CSE' },
-    });
-    await prisma.student.upsert({
-      where: { userId: user.id },
-      update: { tutorId: tutor.id },
-      create: {
-        userId: user.id,
-        registerNo: s.registerNo,
-        department: 'CSE',
-        semester: s.semester,
-        tutorId: tutor.id,
-      },
-    });
-  }
-
-  // Demo account for manual testing; Firebase phone auth is still required.
-  const demo = await prisma.user.upsert({
-    where: { mobile: '9074121510' },
-    update: {},
-    create: {
-      name: 'Demo Student',
-      role: Role.STUDENT,
-      mobile: '9074121510',
-      department: 'CSE',
-    },
-  });
-  await prisma.student.upsert({
-    where: { userId: demo.id },
-    update: { tutorId: tutor.id },
-    create: {
-      userId: demo.id,
-      registerNo: 'CCE25CS100',
-      department: 'CSE',
-      semester: 3,
-      tutorId: tutor.id,
-    },
-  });
-
+  // Seed default gate for QR scanning
   await prisma.gate.upsert({
     where: { id: 'main-gate' },
     update: {},
     create: { id: 'main-gate', name: 'Main Gate', directionDefault: 'BOTH' },
   });
 
-  console.log('Seeded:', {
-    tutor: tutor.mobile,
-    hod: hod.mobile,
-    guard: guard.mobile,
-    students: studentData.map((s) => `${s.registerNo} / ${s.mobile}`).join(', '),
-    demo: demo.mobile,
+  // Seed default settings
+  const defaultSettings = [
+    { key: 'collegeName', value: JSON.stringify('Christ College of Engineering, Irinjalakuda') },
+    { key: 'minDwellMinutes', value: JSON.stringify(10) },
+    { key: 'categories', value: JSON.stringify(['Medical', 'Personal', 'Official', 'Academic', 'Emergency']) },
+  ];
+
+  for (const setting of defaultSettings) {
+    await prisma.appSetting.upsert({
+      where: { key: setting.key },
+      update: {},
+      create: setting,
+    });
+  }
+
+  console.log('Seed complete:', {
+    admin: admin.mobile,
+    role: admin.role,
   });
+  console.log('');
+  console.log('Next: Log in as Admin (phone:', adminPhone, ') with OTP 123456');
+  console.log('Then add Tutors, HODs, Guards and Students from the Admin panel.');
 }
 
 main()

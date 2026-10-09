@@ -1,15 +1,12 @@
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'app_state.dart';
-import 'config/temp_auth_config.dart';
-import 'mock_backend.dart';
+import 'api_client.dart';
+import 'theme/app_theme.dart';
 
-/// Centralized authentication screen.
-/// In development/demo mode, reads from [TempAuthConfig].
-/// Checks whether a phone number is registered before proceeding.
+/// Phone + OTP login screen.
+/// OTP verification is handled entirely server-side (the backend checks
+/// TEMP_OTP_ENABLED or Firebase). The mobile app never knows the OTP logic.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -20,37 +17,17 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _mobile = TextEditingController();
   final _code = TextEditingController();
-  String? _verificationId;
-  ConfirmationResult? _confirmationResult;
   bool _otpSent = false;
   bool _busy = false;
   String? _error;
 
   AppState get _state => AppStateScope.of(context);
-  bool get _hasFirebase => Firebase.apps.isNotEmpty;
 
   String _normalizedMobile() {
     final digits = _mobile.text.replaceAll(RegExp(r'\D+'), '');
-    return digits.startsWith('91') && digits.length > 10 ? digits.substring(2) : digits;
-  }
-
-  Future<void> _quickLogin(String mobile) async {
-    if (kReleaseMode && !const bool.fromEnvironment('IS_DEMO_MODE', defaultValue: false)) {
-      setState(() => _error = 'Quick demo sign-in is disabled in production builds');
-      return;
-    }
-    setState(() { _busy = true; _error = null; });
-    try {
-      if (_state.api.isDemoMode && !MockBackend.instance.isMobileRegistered(mobile)) {
-        throw Exception("This number isn't registered. Contact your admin.");
-      }
-      await _state.loginDemoMobile(mobile);
-    } catch (e) {
-      final msg = e.toString().replaceFirst('Exception: ', '');
-      if (mounted) setState(() => _error = msg);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    return digits.startsWith('91') && digits.length > 10
+        ? digits.substring(2)
+        : digits;
   }
 
   Future<void> _sendOtp() async {
@@ -60,137 +37,54 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Check registration in demo mode
-    if (_state.api.isDemoMode && !MockBackend.instance.isMobileRegistered(mobile)) {
-      setState(() => _error = "This number isn't registered. Contact your admin.");
-      return;
-    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
 
-    setState(() { _busy = true; _error = null; });
-
-    if (TempAuthConfig.useTempOtp || _state.api.isDemoMode) {
-      if (kReleaseMode && !const bool.fromEnvironment('IS_DEMO_MODE', defaultValue: false)) {
-        setState(() => _error = 'Demo authentication is disabled in production builds');
-        return;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+    try {
+      await _state.sendOtp(mobile);
       if (mounted) {
         setState(() {
           _otpSent = true;
           _busy = false;
-          _code.text = TempAuthConfig.tempOtp;
         });
       }
-      return;
-    }
-
-    if (!_hasFirebase) {
-      setState(() => _error = 'Authentication service is not configured');
-      return;
-    }
-
-    try {
-      final phoneNumber = '+91$mobile';
-      if (kIsWeb) {
-        _confirmationResult = await FirebaseAuth.instance.signInWithPhoneNumber(phoneNumber);
-        if (mounted) setState(() => _otpSent = true);
-      } else {
-        await FirebaseAuth.instance.verifyPhoneNumber(
-          phoneNumber: phoneNumber,
-          verificationCompleted: _signInWithCredential,
-          verificationFailed: (error) {
-            if (mounted) setState(() => _error = error.message ?? 'Unable to send verification code');
-          },
-          codeSent: (verificationId, _) {
-            if (mounted) {
-              setState(() {
-                _verificationId = verificationId;
-                _otpSent = true;
-              });
-            }
-          },
-          codeAutoRetrievalTimeout: (verificationId) {
-            _verificationId = verificationId;
-          },
-        );
+    } on ApiException catch (e) {
+      if (mounted) setState(() { _error = e.message; _busy = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString().replaceFirst('Exception: ', '');
+          _busy = false;
+        });
       }
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _signInWithCredential(PhoneAuthCredential credential) async {
-    try {
-      final user = (await FirebaseAuth.instance.signInWithCredential(credential)).user;
-      final idToken = await user?.getIdToken();
-      if (idToken == null) throw StateError('Firebase did not return a sign-in token');
-      await _state.loginWithFirebaseToken(idToken);
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
     }
   }
 
   Future<void> _verify() async {
-    setState(() { _busy = true; _error = null; });
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     final mobile = _normalizedMobile();
 
-    if (TempAuthConfig.useTempOtp || _state.api.isDemoMode) {
-      if (kReleaseMode && !const bool.fromEnvironment('IS_DEMO_MODE', defaultValue: false)) {
-        setState(() => _error = 'Demo authentication is disabled in production builds');
-        return;
-      }
-      if (_code.text.trim() != TempAuthConfig.tempOtp) {
-        setState(() {
-          _busy = false;
-          _error = 'Invalid OTP. Please enter ${TempAuthConfig.tempOtp}';
-        });
-        return;
-      }
-      try {
-        await _state.loginDemoMobile(mobile);
-      } catch (e) {
-        final msg = e.toString().replaceFirst('Exception: ', '');
-        if (mounted) setState(() => _error = msg);
-      } finally {
-        if (mounted) setState(() => _busy = false);
-      }
-      return;
-    }
-
-    if (!_hasFirebase) {
-      setState(() => _error = 'Authentication service is not configured');
-      return;
-    }
-
     try {
-      final UserCredential credential;
-      if (kIsWeb) {
-        credential = await _confirmationResult!.confirm(_code.text.trim());
-      } else {
-        final verificationId = _verificationId;
-        if (verificationId == null) throw StateError('Request a new verification code');
-        final phoneCredential = PhoneAuthProvider.credential(
-          verificationId: verificationId,
-          smsCode: _code.text.trim(),
-        );
-        credential = await FirebaseAuth.instance.signInWithCredential(phoneCredential);
-      }
-      final idToken = await credential.user?.getIdToken();
-      if (idToken == null) throw StateError('Firebase did not return a sign-in token');
-      await _state.loginWithFirebaseToken(idToken);
+      await _state.verifyOtpAndLogin(mobile, _code.text.trim());
+    } on ApiException catch (e) {
+      if (mounted) setState(() { _error = e.message; _busy = false; });
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _error = e.toString().replaceFirst('Exception: ', '');
+          _busy = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final showDemo = _state.api.isDemoMode &&
-        (!kReleaseMode || const bool.fromEnvironment('IS_DEMO_MODE', defaultValue: false));
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
@@ -201,27 +95,67 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Logo / Title
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(Icons.qr_code_scanner_rounded,
+                            color: Colors.white, size: 32),
+                      ),
+                      const SizedBox(height: 16),
+                      Text('CCE Outpass',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 4),
+                      Text('Christ College of Engineering, Irinjalakuda',
+                          style: Theme.of(context).textTheme.bodySmall,
+                          textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Login card
                 Card(
                   margin: const EdgeInsets.symmetric(horizontal: 20),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  elevation: 2,
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text('CCE Outpass',
-                            style: Theme.of(context).textTheme.headlineSmall,
-                            textAlign: TextAlign.center),
-                        const SizedBox(height: 4),
-                        Text('Christ College of Engineering, Irinjalakuda',
-                            style: Theme.of(context).textTheme.bodySmall,
-                            textAlign: TextAlign.center),
-                        const SizedBox(height: 24),
+                        Text('Sign in',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 16),
                         TextField(
                           controller: _mobile,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Registered mobile number',
                             prefixText: '+91 ',
+                            prefixIcon: const Icon(Icons.phone_outlined),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
                           ),
                           keyboardType: TextInputType.phone,
                           enabled: !_otpSent,
@@ -232,90 +166,79 @@ class _LoginScreenState extends State<LoginScreen> {
                             controller: _code,
                             decoration: InputDecoration(
                               labelText: '6-digit OTP',
-                              helperText: showDemo ? 'Demo mode OTP: ${TempAuthConfig.tempOtp}' : null,
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12)),
                             ),
                             keyboardType: TextInputType.number,
                             maxLength: 6,
+                            autofocus: true,
                           ),
                         ],
                         if (_error != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 12),
-                            child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.error_outline,
+                                      color: Colors.red.shade700, size: 18),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(_error!,
+                                        style: TextStyle(
+                                            color: Colors.red.shade700,
+                                            fontSize: 13)),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         const SizedBox(height: 20),
-                        FilledButton(
-                          onPressed: _busy ? null : (_otpSent ? _verify : _sendOtp),
-                          child: Text(_busy
+                        FilledButton.icon(
+                          onPressed:
+                              _busy ? null : (_otpSent ? _verify : _sendOtp),
+                          icon: _busy
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white),
+                                )
+                              : Icon(_otpSent
+                                  ? Icons.login_rounded
+                                  : Icons.send_rounded),
+                          label: Text(_busy
                               ? 'Please wait…'
                               : (_otpSent ? 'Verify & sign in' : 'Send OTP')),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
+                        if (_otpSent) ...[
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _otpSent = false;
+                                _code.clear();
+                                _error = null;
+                              });
+                            },
+                            child: const Text('← Change number'),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                 ),
-                if (showDemo) ...[
-                  const SizedBox(height: 20),
-                  Card(
-                    margin: const EdgeInsets.symmetric(horizontal: 20),
-                    color: Colors.green.shade50,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.bolt, color: Colors.green.shade800, size: 20),
-                              const SizedBox(width: 8),
-                              Text('Quick Demo Sign-In',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.green.shade900)),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Test any role in 1 click without waiting for SMS:',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              ActionChip(
-                                avatar: const Text('🎓'),
-                                label: const Text('Student (Demo)'),
-                                onPressed: _busy ? null : () => _quickLogin('9074121510'),
-                              ),
-                              ActionChip(
-                                avatar: const Text('👨‍🏫'),
-                                label: const Text('Tutor (Dr. Anand)'),
-                                onPressed: _busy ? null : () => _quickLogin('9000000001'),
-                              ),
-                              ActionChip(
-                                avatar: const Text('🏛️'),
-                                label: const Text('HOD (Dr. Priya)'),
-                                onPressed: _busy ? null : () => _quickLogin('9000000002'),
-                              ),
-                              ActionChip(
-                                avatar: const Text('🛡️'),
-                                label: const Text('Guard (Suresh)'),
-                                onPressed: _busy ? null : () => _quickLogin('9000000090'),
-                              ),
-                              ActionChip(
-                                avatar: const Text('⚡'),
-                                label: const Text('Admin (Main)'),
-                                onPressed: _busy ? null : () => _quickLogin(TempAuthConfig.adminPhone),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),

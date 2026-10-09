@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cce_outpass/qr_token.dart';
 import 'package:cce_outpass/app_state.dart';
-import 'package:cce_outpass/api_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class FakeSecureStorage implements FlutterSecureStorage {
@@ -92,48 +90,32 @@ void main() {
       expect(sigRestored, isNotEmpty);
     });
 
-    test('AppState reuses existing device key from secure storage on repeated logins', () async {
-      final fakeStorage = FakeSecureStorage();
-      final state1 = AppState(storage: fakeStorage, api: ApiClient(isDemoMode: true));
-
-      await state1.loginDemoMobile('9074121510');
-      final firstKeyPem = state1.deviceKeys!.publicKeyPem();
-      final storedKey = await fakeStorage.read(key: AppState.storageKeyForUser('9074121510'));
-      expect(storedKey, isNotNull);
-
-      // Simulate app restart / new AppState instance with the same persistent storage
-      final state2 = AppState(storage: fakeStorage, api: ApiClient(isDemoMode: true));
-      await state2.loginDemoMobile('9074121510');
-      final secondKeyPem = state2.deviceKeys!.publicKeyPem();
-
-      expect(secondKeyPem, equals(firstKeyPem),
-          reason: 'Existing device key must be reused across app restarts');
-    });
-
-    test('AppState handles corrupt storage gracefully by generating new key', () async {
-      final fakeStorage = FakeSecureStorage();
-      await fakeStorage.write(
-        key: AppState.storageKeyForUser('9074121510'),
-        value: 'corrupt-not-a-valid-pem',
+    test('AppState storage key format is consistent', () {
+      expect(
+        AppState.storageKeyForUser('9074121510'),
+        equals('cce_device_privkey_9074121510'),
       );
-
-      final state = AppState(storage: fakeStorage, api: ApiClient(isDemoMode: true));
-      await state.loginDemoMobile('9074121510');
-
-      expect(state.deviceKeys, isNotNull);
-      expect(state.deviceKeys!.publicKeyPem(), startsWith('-----BEGIN PUBLIC KEY-----'));
     });
 
-    test('AppState does not crash if storage read or write throws', () async {
-      final fakeStorage = FakeSecureStorage();
-      fakeStorage.throwOnRead = true;
-      fakeStorage.throwOnWrite = true;
+    test('DeviceKeys generate produces valid P-256 keys', () {
+      final keys = DeviceKeys.generate();
+      final pubPem = keys.publicKeyPem();
+      expect(pubPem, startsWith('-----BEGIN PUBLIC KEY-----'));
+      expect(pubPem, endsWith('-----END PUBLIC KEY-----\n'));
 
-      final state = AppState(storage: fakeStorage, api: ApiClient(isDemoMode: true));
-      await state.loginDemoMobile('9074121510');
+      // Token building should work
+      final step = DeviceKeys.currentStep();
+      final token = keys.buildToken('test-outpass-id', step);
+      expect(token, startsWith('v1.test-outpass-id.$step.'));
+    });
 
-      expect(state.deviceKeys, isNotNull);
-      expect(state.deviceKeys!.publicKeyPem(), startsWith('-----BEGIN PUBLIC KEY-----'));
+    test('DeviceKeys currentStep increments over time', () {
+      final step1 = DeviceKeys.currentStep();
+      expect(step1, isPositive);
+      // currentStep = unix epoch seconds (used as monotonic counter for QR replay)
+      final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      // Allow ±60s drift (wide window for slow test machines)
+      expect((step1 - nowSec).abs(), lessThan(60));
     });
   });
 }

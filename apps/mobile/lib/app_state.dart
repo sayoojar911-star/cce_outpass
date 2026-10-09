@@ -5,8 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api_client.dart';
 import 'qr_token.dart';
 
-/// Session state: one user, one role per login (PRD §2.1 role switcher is a
-/// later phase — the MVP seeds separate staff accounts).
+/// Session state: one user, one role per login (PRD §2.1).
 class AppState extends ChangeNotifier {
   AppState({FlutterSecureStorage? storage, ApiClient? api})
       : storage = storage ?? const FlutterSecureStorage(),
@@ -15,9 +14,12 @@ class AppState extends ChangeNotifier {
   final ApiClient api;
   final FlutterSecureStorage storage;
 
+  String? userId;
   String? userName;
   String? userRole;
   String? userMobile;
+  String? userDepartment;
+  String? refreshToken;
   DeviceKeys? deviceKeys;
 
   bool get loggedIn => userRole != null;
@@ -28,6 +30,8 @@ class AppState extends ChangeNotifier {
   bool get isAdmin => userRole == 'ADMIN';
 
   static String storageKeyForUser(String mobile) => 'cce_device_privkey_$mobile';
+  static const String _refreshTokenKey = 'cce_refresh_token';
+  static const String _userMobileKey = 'cce_user_mobile';
 
   Future<DeviceKeys> _loadOrCreateDeviceKeys(String mobile) async {
     final storageKey = storageKeyForUser(mobile);
@@ -53,14 +57,27 @@ class AppState extends ChangeNotifier {
     return newKeys;
   }
 
-  Future<void> loginWithFirebaseToken(String idToken) async {
-    final user = await api.verifyFirebasePhone(idToken);
+  /// Send OTP to mobile number.
+  Future<void> sendOtp(String mobile) async {
+    await api.sendOtp(mobile);
+  }
+
+  /// Verify OTP, get user data and JWT, register device.
+  Future<void> verifyOtpAndLogin(String mobile, String code) async {
+    final user = await api.verifyOtp(mobile, code);
+    userId = user['id'] as String?;
     userName = user['name'] as String?;
     userRole = user['role'] as String?;
     userMobile = user['mobile'] as String?;
+    userDepartment = user['department'] as String?;
 
-    final mobile = userMobile ?? '';
-    deviceKeys = await _loadOrCreateDeviceKeys(mobile);
+    // Persist refresh token for session recovery
+    try {
+      await storage.write(key: _refreshTokenKey, value: api.accessToken);
+      await storage.write(key: _userMobileKey, value: userMobile);
+    } catch (_) {}
+
+    deviceKeys = await _loadOrCreateDeviceKeys(userMobile ?? mobile);
 
     // Device binding (PRD §10.3): key is registered server-side; scans are
     // verified against this key and DEVICE_REVOKED after revocation.
@@ -68,23 +85,20 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loginDemoMobile(String mobile) async {
-    final user = await api.verifyFirebasePhone('mock-token:$mobile');
-    userName = user['name'] as String?;
-    userRole = user['role'] as String?;
-    userMobile = user['mobile'] as String?;
-
-    deviceKeys = await _loadOrCreateDeviceKeys(userMobile ?? mobile);
-    await api.registerDevice(deviceKeys!.publicKeyPem(), 'web');
-    notifyListeners();
-  }
-
   void logout() {
+    userId = null;
     userName = null;
     userRole = null;
     userMobile = null;
+    userDepartment = null;
+    refreshToken = null;
     deviceKeys = null;
     api.accessToken = null;
+    // Clear persisted session
+    try {
+      storage.delete(key: _refreshTokenKey);
+      storage.delete(key: _userMobileKey);
+    } catch (_) {}
     notifyListeners();
   }
 }

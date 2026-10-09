@@ -1,10 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-
-import 'mock_backend.dart';
 
 /// Random UUID v4 for scan idempotency keys (PRD §8 gate_events.client_scan_id).
 String uuidV4() {
@@ -21,14 +18,13 @@ String uuidV4() {
 /// (PRD §4 principles) — the app only displays and requests.
 class ApiClient {
   ApiClient({
-    this.baseUrl = const String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:3000/v1'),
-    bool? isDemoMode,
-  }) : isDemoMode = isDemoMode ??
-            (const bool.fromEnvironment('IS_DEMO_MODE', defaultValue: false) ||
-                !kReleaseMode);
+    this.baseUrl = const String.fromEnvironment(
+      'API_BASE_URL',
+      defaultValue: 'http://localhost:3000/v1',
+    ),
+  });
 
   final String baseUrl;
-  bool isDemoMode;
   String? accessToken;
 
   Map<String, String> get _headers => {
@@ -54,41 +50,49 @@ class ApiClient {
   }
 
   Future<dynamic> get(String path) async {
-    if (isDemoMode && path == '/gate/scans/mine') {
-      return MockBackend.instance.guardScans();
-    }
     final r = await http.get(Uri.parse('$baseUrl$path'), headers: _headers);
     return _decode(r);
   }
 
-  // ---- Auth (Firebase Phone Auth) ----
+  Future<dynamic> delete(String path) async {
+    final r = await http.delete(Uri.parse('$baseUrl$path'), headers: _headers);
+    return _decode(r);
+  }
 
-  Future<Map<String, dynamic>> verifyFirebasePhone(String idToken) async {
-    if (isDemoMode) {
-      final res = MockBackend.instance.loginUser(idToken);
-      accessToken = res['accessToken'] as String?;
-      return (res['user'] as Map).cast<String, dynamic>();
-    }
-    final res = await post('/auth/firebase/verify', body: {'idToken': idToken});
+  // ---- Auth ----
+
+  /// Send OTP to the given mobile number via the backend.
+  Future<Map<String, dynamic>> sendOtp(String mobile) async {
+    return (await post('/auth/otp/send', body: {'mobile': mobile}))
+        .cast<String, dynamic>();
+  }
+
+  /// Verify OTP and get access + refresh tokens.
+  Future<Map<String, dynamic>> verifyOtp(String mobile, String code) async {
+    final res =
+        await post('/auth/otp/verify', body: {'mobile': mobile, 'code': code});
     accessToken = res['accessToken'] as String?;
     return (res['user'] as Map).cast<String, dynamic>();
   }
 
+  Future<Map<String, dynamic>> refresh(String refreshToken) async {
+    final res = await post('/auth/refresh', body: {'refreshToken': refreshToken});
+    accessToken = res['accessToken'] as String?;
+    return res as Map<String, dynamic>;
+  }
+
   Future<dynamic> registerDevice(String publicKeyPem, String platform) async {
-    if (isDemoMode) {
-      MockBackend.instance.registerDevice(publicKeyPem);
-      return {'ok': true};
-    }
     return post('/auth/device/register',
         body: {'publicKeyPem': publicKeyPem, 'platform': platform});
+  }
+
+  Future<Map<String, dynamic>> me() async {
+    return (await get('/auth/me') as Map).cast<String, dynamic>();
   }
 
   // ---- Outpasses (FR-STU) ----
 
   Future<List<dynamic>> myOutpasses() async {
-    if (isDemoMode) {
-      return MockBackend.instance.myOutpasses();
-    }
     return await get('/outpasses') as List<dynamic>;
   }
 
@@ -100,16 +104,6 @@ class ApiClient {
     String? purposeText,
     String type = 'NORMAL',
   }) async {
-    if (isDemoMode) {
-      return MockBackend.instance.createOutpass(
-        requestedExitAt: requestedExitAt,
-        expectedReturnAt: expectedReturnAt,
-        destination: destination,
-        purposeCategory: purposeCategory,
-        purposeText: purposeText,
-        type: type,
-      );
-    }
     return (await post('/outpasses', body: {
       'requestedExitAt': requestedExitAt,
       'expectedReturnAt': expectedReturnAt,
@@ -122,40 +116,27 @@ class ApiClient {
   }
 
   Future<void> cancelOutpass(String id) async {
-    if (isDemoMode) {
-      MockBackend.instance.cancelOutpass(id);
-      return;
-    }
     await post('/outpasses/$id/cancel');
   }
 
   // ---- Approvals (FR-TUT / FR-HOD) ----
 
   Future<List<dynamic>> pending() async {
-    if (isDemoMode) {
-      return MockBackend.instance.pendingApprovals();
-    }
     return await get('/approvals/pending') as List<dynamic>;
   }
 
   Future<Map<String, dynamic>> decide(String outpassId, String decision,
       {String? comment}) async {
-    if (isDemoMode) {
-      return MockBackend.instance
-          .decide(outpassId, decision, comment: comment);
-    }
-    return (await post('/approvals/$outpassId/decision',
-            body: {'decision': decision, if (comment != null) 'comment': comment}))
+    return (await post('/approvals/$outpassId/decision', body: {
+      'decision': decision,
+      if (comment != null) 'comment': comment,
+    }))
         .cast<String, dynamic>();
   }
 
   // ---- Gate (FR-SEC) ----
 
   Future<void> startShift(String gateId) async {
-    if (isDemoMode) {
-      MockBackend.instance.startShift(gateId);
-      return;
-    }
     await post('/gate/session/start', body: {'gateId': gateId});
   }
 
@@ -165,14 +146,6 @@ class ApiClient {
     required String gateId,
     required String clientScanId,
   }) async {
-    if (isDemoMode) {
-      return MockBackend.instance.scan(
-        token: token,
-        direction: direction,
-        gateId: gateId,
-        clientScanId: clientScanId,
-      );
-    }
     return (await post('/gate/scans', body: {
       'token': token,
       'direction': direction,
@@ -182,71 +155,81 @@ class ApiClient {
         .cast<String, dynamic>();
   }
 
+  Future<List<dynamic>> guardScans() async {
+    return await get('/gate/scans/mine') as List<dynamic>;
+  }
+
   // ---- Admin APIs ----
 
   Future<List<dynamic>> adminGetUsers() async {
-    if (isDemoMode) return MockBackend.instance.getAllUsers();
     return (await get('/admin/users') as List).cast<dynamic>();
   }
 
   Future<Map<String, dynamic>> adminAddUser(Map<String, dynamic> data) async {
-    if (isDemoMode) return MockBackend.instance.addUser(data);
-    return (await post('/admin/users', body: data) as Map).cast<String, dynamic>();
+    return (await post('/admin/users', body: data) as Map)
+        .cast<String, dynamic>();
   }
 
-  Future<Map<String, dynamic>> adminUpdateUser(String id, Map<String, dynamic> data) async {
-    if (isDemoMode) return MockBackend.instance.updateUser(id, data);
-    return (await post('/admin/users/$id', body: data) as Map).cast<String, dynamic>();
+  Future<Map<String, dynamic>> adminUpdateUser(
+      String id, Map<String, dynamic> data) async {
+    return (await post('/admin/users/$id', body: data) as Map)
+        .cast<String, dynamic>();
   }
 
   Future<void> adminDeleteUser(String id) async {
-    if (isDemoMode) {
-      MockBackend.instance.deleteUser(id);
-      return;
-    }
     await post('/admin/users/$id/delete');
   }
 
   Future<int> adminBulkAddUsers(List<Map<String, String>> rows) async {
-    if (isDemoMode) return MockBackend.instance.bulkAddUsers(rows);
     final res = await post('/admin/users/bulk', body: {'rows': rows});
     return res['count'] as int;
   }
 
   Future<List<dynamic>> adminGetDepartments() async {
-    if (isDemoMode) return MockBackend.instance.getDepartments();
     return (await get('/admin/departments') as List).cast<dynamic>();
   }
 
-  Future<Map<String, dynamic>> adminAddOrUpdateDepartment(String code, String name, String? hodId) async {
-    if (isDemoMode) return MockBackend.instance.addOrUpdateDepartment(code, name, hodId);
-    return (await post('/admin/departments', body: {'code': code, 'name': name, 'hodId': hodId}) as Map).cast<String, dynamic>();
+  Future<Map<String, dynamic>> adminAddOrUpdateDepartment(
+      String code, String name, String? hodId) async {
+    return (await post('/admin/departments',
+            body: {'code': code, 'name': name, 'hodId': hodId}) as Map)
+        .cast<String, dynamic>();
+  }
+
+  Future<void> adminDeleteDepartment(String id) async {
+    await delete('/admin/departments/$id');
   }
 
   Future<List<dynamic>> adminGetOutpasses() async {
-    if (isDemoMode) return MockBackend.instance.getAllOutpasses();
     return (await get('/admin/outpasses') as List).cast<dynamic>();
   }
 
+  Future<void> adminCancelOutpass(String id) async {
+    await post('/admin/outpasses/$id/cancel');
+  }
+
   Future<Map<String, dynamic>> adminGetSettings() async {
-    if (isDemoMode) return MockBackend.instance.getSettings();
     return (await get('/admin/settings') as Map).cast<String, dynamic>();
   }
 
-  Future<void> adminUpdateSettings({String? collegeName, int? minDwellMinutes, List<String>? categories}) async {
-    if (isDemoMode) {
-      MockBackend.instance.updateSettings(
-        collegeName: collegeName,
-        minDwellMinutes: minDwellMinutes,
-        categories: categories,
-      );
-      return;
-    }
+  Future<void> adminUpdateSettings(
+      {String? collegeName,
+      int? minDwellMinutes,
+      List<String>? categories}) async {
     await post('/admin/settings', body: {
       if (collegeName != null) 'collegeName': collegeName,
       if (minDwellMinutes != null) 'minDwellMinutes': minDwellMinutes,
       if (categories != null) 'categories': categories,
     });
+  }
+
+  Future<List<dynamic>> adminGetAuditLog({int limit = 50, int offset = 0}) async {
+    return (await get('/admin/audit?limit=$limit&offset=$offset') as List)
+        .cast<dynamic>();
+  }
+
+  Future<Map<String, dynamic>> adminGetDashboard() async {
+    return (await get('/admin/dashboard') as Map).cast<String, dynamic>();
   }
 }
 
