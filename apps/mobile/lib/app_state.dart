@@ -25,6 +25,7 @@ class AppState extends ChangeNotifier {
   bool get isTutor => userRole == 'TUTOR';
   bool get isHod => userRole == 'HOD';
   bool get isGuard => userRole == 'GUARD';
+  bool get isAdmin => userRole == 'ADMIN';
 
   static String storageKeyForUser(String mobile) => 'cce_device_privkey_$mobile';
 

@@ -78,6 +78,12 @@ class MockBackend {
         'department': 'CSE',
       },
       {
+        'id': 'u-admin-1',
+        'name': 'System Administrator',
+        'role': 'ADMIN',
+        'mobile': '8921578838',
+      },
+      {
         'id': 'u-guard-1',
         'name': 'Suresh (Security)',
         'role': 'GUARD',
@@ -122,13 +128,20 @@ class MockBackend {
         );
   }
 
+  bool isMobileRegistered(String mobile) {
+    return findUserByMobile(mobile) != null;
+  }
+
   Map<String, dynamic> loginUser(String mobileOrToken) {
     // If passed mock-token:mobile or raw mobile
     String mobile = mobileOrToken;
     if (mobile.contains(':')) {
       mobile = mobile.split(':').last;
     }
-    final user = findUserByMobile(mobile) ?? _users.first;
+    final user = findUserByMobile(mobile);
+    if (user == null) {
+      throw Exception("This number isn't registered. Contact your admin.");
+    }
     currentUserId = user['id'] as String;
     return {
       'accessToken': 'mock-access-token-${user['id']}',

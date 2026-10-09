@@ -4,9 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'app_state.dart';
+import 'config/temp_auth_config.dart';
+import 'mock_backend.dart';
 
-/// Firebase Phone Authentication sends and verifies the SMS code.
-/// In demo mode, one-click demo logins or fallback mock OTP are supported.
+/// Centralized authentication screen.
+/// In development/demo mode, reads from [TempAuthConfig].
+/// Checks whether a phone number is registered before proceeding.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -28,7 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String _normalizedMobile() {
     final digits = _mobile.text.replaceAll(RegExp(r'\D+'), '');
-    return digits.startsWith('91') ? digits.substring(2) : digits;
+    return digits.startsWith('91') && digits.length > 10 ? digits.substring(2) : digits;
   }
 
   Future<void> _quickLogin(String mobile) async {
@@ -38,9 +41,13 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     setState(() { _busy = true; _error = null; });
     try {
+      if (_state.api.isDemoMode && !MockBackend.instance.isMobileRegistered(mobile)) {
+        throw Exception("This number isn't registered. Contact your admin.");
+      }
       await _state.loginDemoMobile(mobile);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      if (mounted) setState(() => _error = msg);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -52,9 +59,16 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = 'Enter a valid 10-digit mobile number');
       return;
     }
+
+    // Check registration in demo mode
+    if (_state.api.isDemoMode && !MockBackend.instance.isMobileRegistered(mobile)) {
+      setState(() => _error = "This number isn't registered. Contact your admin.");
+      return;
+    }
+
     setState(() { _busy = true; _error = null; });
 
-    if (_state.api.isDemoMode) {
+    if (TempAuthConfig.useTempOtp || _state.api.isDemoMode) {
       if (kReleaseMode && !const bool.fromEnvironment('IS_DEMO_MODE', defaultValue: false)) {
         setState(() => _error = 'Demo authentication is disabled in production builds');
         return;
@@ -64,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() {
           _otpSent = true;
           _busy = false;
-          _code.text = '123456';
+          _code.text = TempAuthConfig.tempOtp;
         });
       }
       return;
@@ -122,15 +136,23 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() { _busy = true; _error = null; });
     final mobile = _normalizedMobile();
 
-    if (_state.api.isDemoMode) {
+    if (TempAuthConfig.useTempOtp || _state.api.isDemoMode) {
       if (kReleaseMode && !const bool.fromEnvironment('IS_DEMO_MODE', defaultValue: false)) {
         setState(() => _error = 'Demo authentication is disabled in production builds');
+        return;
+      }
+      if (_code.text.trim() != TempAuthConfig.tempOtp) {
+        setState(() {
+          _busy = false;
+          _error = 'Invalid OTP. Please enter ${TempAuthConfig.tempOtp}';
+        });
         return;
       }
       try {
         await _state.loginDemoMobile(mobile);
       } catch (e) {
-        if (mounted) setState(() => _error = e.toString());
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        if (mounted) setState(() => _error = msg);
       } finally {
         if (mounted) setState(() => _busy = false);
       }
@@ -210,7 +232,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             controller: _code,
                             decoration: InputDecoration(
                               labelText: '6-digit OTP',
-                              helperText: showDemo ? 'Demo mode OTP: 123456' : null,
+                              helperText: showDemo ? 'Demo mode OTP: ${TempAuthConfig.tempOtp}' : null,
                             ),
                             keyboardType: TextInputType.number,
                             maxLength: 6,
@@ -281,6 +303,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                 avatar: const Text('🛡️'),
                                 label: const Text('Guard (Suresh)'),
                                 onPressed: _busy ? null : () => _quickLogin('9000000090'),
+                              ),
+                              ActionChip(
+                                avatar: const Text('⚡'),
+                                label: const Text('Admin (Main)'),
+                                onPressed: _busy ? null : () => _quickLogin(TempAuthConfig.adminPhone),
                               ),
                             ],
                           ),
