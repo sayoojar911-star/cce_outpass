@@ -58,16 +58,17 @@ The Firebase-verified phone must match an active user already present in the
 outpass database. Firebase sends and verifies the SMS; the API verifies the
 Firebase ID token before issuing its own app session.
 
-## Seeded accounts
+## Initial Admin Account
 
-| Role | Mobile | Name |
-|------|--------|------|
-| **Demo Student** | `9074121510` | Demo Student |
-| Student | `9000000010` | Ananya S |
-| Student | `9000000011` | Arjun R |
-| Tutor | `9000000001` | Dr. Anand Kumar |
-| HOD | `9000000002` | Dr. Priya Menon |
-| Guard | `9000000090` | Suresh (Security) |
+The database seed creates ONLY the system administrator account:
+
+| Role | Mobile | Name | Temporary OTP |
+|------|--------|------|---------------|
+| **Admin** | `8921578838` | System Administrator | `123456` |
+
+All other roles (Tutors, HODs, Guards, Students) are created dynamically via the Admin Console.
+Unregistered phone numbers cannot log in.
+
 
 Walkthrough: log in as the student → request an outpass → log in as the tutor
 (approve) → the HOD (approve) → the student (Show QR) → the guard (scan the QR

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'api_client.dart';
 import 'app_state.dart';
 import 'theme/app_theme.dart';
 
@@ -18,6 +19,7 @@ class _AdminHomeState extends State<AdminHome> {
   List<dynamic> _departments = [];
   List<dynamic> _outpasses = [];
   Map<String, dynamic> _settings = {};
+  List<dynamic> _auditLogs = [];
 
   AppState get _state => AppStateScope.of(context);
 
@@ -34,12 +36,14 @@ class _AdminHomeState extends State<AdminHome> {
       final d = await _state.api.adminGetDepartments();
       final o = await _state.api.adminGetOutpasses();
       final s = await _state.api.adminGetSettings();
+      final a = await _state.api.adminGetAuditLog(limit: 50);
       if (mounted) {
         setState(() {
           _users = u;
           _departments = d;
           _outpasses = o;
           _settings = s;
+          _auditLogs = a;
         });
       }
     } catch (e) {
@@ -60,7 +64,7 @@ class _AdminHomeState extends State<AdminHome> {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppTheme.adminAccent.withOpacity(0.1),
+                color: AppTheme.adminAccent.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.admin_panel_settings, color: AppTheme.adminAccent, size: 22),
@@ -96,6 +100,7 @@ class _AdminHomeState extends State<AdminHome> {
                 _AdminDashboardTab(
                   users: _users,
                   outpasses: _outpasses,
+                  auditLogs: _auditLogs,
                   onNavigate: (i) => setState(() => _currentIndex = i),
                 ),
                 _AdminPeopleTab(
@@ -111,9 +116,14 @@ class _AdminHomeState extends State<AdminHome> {
                 _AdminOutpassMonitorTab(
                   outpasses: _outpasses,
                   departments: _departments,
+                  onReload: _loadAll,
                 ),
                 _AdminSettingsTab(
                   settings: _settings,
+                  onReload: _loadAll,
+                ),
+                _AdminAuditTab(
+                  auditLogs: _auditLogs,
                   onReload: _loadAll,
                 ),
               ],
@@ -147,6 +157,11 @@ class _AdminHomeState extends State<AdminHome> {
             selectedIcon: Icon(Icons.settings),
             label: 'Settings',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'Audit Log',
+          ),
         ],
       ),
     );
@@ -160,19 +175,22 @@ class _AdminDashboardTab extends StatelessWidget {
   const _AdminDashboardTab({
     required this.users,
     required this.outpasses,
+    required this.auditLogs,
     required this.onNavigate,
   });
 
   final List<dynamic> users;
   final List<dynamic> outpasses;
+  final List<dynamic> auditLogs;
   final ValueChanged<int> onNavigate;
 
   @override
   Widget build(BuildContext context) {
-    final students = users.where((u) => u['role'] == 'STUDENT').length;
-    final tutors = users.where((u) => u['role'] == 'TUTOR').length;
-    final hods = users.where((u) => u['role'] == 'HOD').length;
-    final guards = users.where((u) => u['role'] == 'GUARD').length;
+    final students = users.where((u) => u['role'] == 'STUDENT' && u['status'] != 'DELETED').length;
+    final tutors = users.where((u) => u['role'] == 'TUTOR' && u['status'] != 'DELETED').length;
+    final hods = users.where((u) => u['role'] == 'HOD' && u['status'] != 'DELETED').length;
+    final guards = users.where((u) => u['role'] == 'GUARD' && u['status'] != 'DELETED').length;
+    final admins = users.where((u) => u['role'] == 'ADMIN' && u['status'] != 'DELETED').length;
 
     final pending = outpasses.where((o) => (o['status'] as String).startsWith('PENDING')).length;
     final approved = outpasses.where((o) => o['status'] == 'APPROVED').length;
@@ -201,8 +219,8 @@ class _AdminDashboardTab extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${users.length} registered accounts across all roles',
-                          style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+                          '${users.where((u) => u['status'] != 'DELETED').length} registered active accounts',
+                          style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13),
                         ),
                       ],
                     ),
@@ -212,7 +230,7 @@ class _AdminDashboardTab extends StatelessWidget {
                       backgroundColor: Colors.white,
                       foregroundColor: AppTheme.adminAccent,
                     ),
-                    onPressed: () => onNavigate(1), // go to people
+                    onPressed: () => onNavigate(1),
                     icon: const Icon(Icons.person_add, size: 18),
                     label: const Text('Add Person'),
                   ),
@@ -225,64 +243,75 @@ class _AdminDashboardTab extends StatelessWidget {
           // User Counts Section
           const Text('Campus Population', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              _StatCard(title: 'Students', count: students, color: AppTheme.studentAccent, icon: Icons.school),
-              const SizedBox(width: 10),
-              _StatCard(title: 'Tutors', count: tutors, color: AppTheme.tutorAccent, icon: Icons.supervisor_account),
-              const SizedBox(width: 10),
-              _StatCard(title: 'HODs', count: hods, color: AppTheme.hodAccent, icon: Icons.account_balance),
-              const SizedBox(width: 10),
-              _StatCard(title: 'Guards', count: guards, color: AppTheme.guardAccent, icon: Icons.security),
-            ],
+          LayoutBuilder(
+            builder: (ctx, constraints) {
+              final itemWidth = (constraints.maxWidth - 20) / 3;
+              return Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  SizedBox(width: itemWidth, child: _StatCard(title: 'Students', count: students, color: AppTheme.studentAccent, icon: Icons.school)),
+                  SizedBox(width: itemWidth, child: _StatCard(title: 'Tutors', count: tutors, color: AppTheme.tutorAccent, icon: Icons.supervisor_account)),
+                  SizedBox(width: itemWidth, child: _StatCard(title: 'HODs', count: hods, color: AppTheme.hodAccent, icon: Icons.account_balance)),
+                  SizedBox(width: itemWidth, child: _StatCard(title: 'Guards', count: guards, color: AppTheme.guardAccent, icon: Icons.security)),
+                  SizedBox(width: itemWidth, child: _StatCard(title: 'Admins', count: admins, color: AppTheme.adminAccent, icon: Icons.admin_panel_settings)),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 20),
 
           // Today's Outpasses Section
-          const Text("Today's Outpass Status", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const Text("Today's Outpasses by Status", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              _StatCard(title: 'Pending', count: pending, color: AppTheme.statusPendingText, icon: Icons.hourglass_top),
-              const SizedBox(width: 10),
-              _StatCard(title: 'Approved', count: approved, color: AppTheme.statusApprovedText, icon: Icons.check_circle),
-              const SizedBox(width: 10),
-              _StatCard(title: 'Exited', count: exited, color: AppTheme.statusExitedText, icon: Icons.logout),
-              const SizedBox(width: 10),
-              _StatCard(title: 'Returned', count: returned, color: AppTheme.statusReturnedText, icon: Icons.task_alt),
-            ],
+          LayoutBuilder(
+            builder: (ctx, constraints) {
+              final itemWidth = (constraints.maxWidth - 10) / 2;
+              return Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  SizedBox(width: itemWidth, child: _StatCard(title: 'Pending Approvals', count: pending, color: AppTheme.statusPendingText, icon: Icons.hourglass_top)),
+                  SizedBox(width: itemWidth, child: _StatCard(title: 'Approved Passes', count: approved, color: AppTheme.statusApprovedText, icon: Icons.check_circle)),
+                  SizedBox(width: itemWidth, child: _StatCard(title: 'Currently Exited', count: exited, color: AppTheme.statusExitedText, icon: Icons.logout)),
+                  SizedBox(width: itemWidth, child: _StatCard(title: 'Safely Returned', count: returned, color: AppTheme.statusReturnedText, icon: Icons.task_alt)),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 24),
 
-          // Recent Outpass Activity
+          // Recent Activity Section
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Recent Outpass Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              const Text('Recent System Activity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               TextButton(
-                onPressed: () => onNavigate(3),
-                child: const Text('View all in Monitor →'),
+                onPressed: () => onNavigate(5),
+                child: const Text('View Audit Log →'),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          if (outpasses.isEmpty)
+          if (auditLogs.isEmpty)
             const EmptyState(
               icon: Icons.history,
-              title: 'No outpasses created yet',
-              subtitle: 'Activity will appear here as students request passes',
+              title: 'No activity recorded yet',
+              subtitle: 'Activity will appear here as users take actions',
             )
           else
-            ...outpasses.take(5).map((o) {
-              final student = o['student'] as Map? ?? {};
+            ...auditLogs.take(5).map((a) {
+              final action = (a['action'] as String? ?? '').replaceAll('_', ' ');
+              final at = a['at'] != null ? DateTime.parse(a['at']).toLocal().toString().substring(0, 16) : '';
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
-                  title: Text('${student['name'] ?? 'Student'} • ${o['displayId']}',
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                  subtitle: Text('${o['purposeCategory']} · ${o['destination']}',
-                      style: const TextStyle(fontSize: 12)),
-                  trailing: StatusChip(status: o['status'] ?? 'PENDING_TUTOR'),
+                  leading: const CircleAvatar(
+                    backgroundColor: AppTheme.surfaceVariant,
+                    child: Icon(Icons.bolt, size: 18, color: AppTheme.adminAccent),
+                  ),
+                  title: Text(action, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  subtitle: Text('By ${a['actorRole'] ?? 'SYSTEM'} · $at', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                 ),
               );
             }),
@@ -307,26 +336,26 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(height: 6),
-              Text(
-                '$count',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                title,
-                style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(height: 4),
+            Text(
+              '$count',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: color),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );
@@ -334,7 +363,7 @@ class _StatCard extends StatelessWidget {
 }
 
 // ==========================================
-// 2. PEOPLE TAB (CRUD + TABS)
+// 2. PEOPLE TAB (5 TABS + CRUD + ASSIGN TUTOR)
 // ==========================================
 class _AdminPeopleTab extends StatefulWidget {
   const _AdminPeopleTab({
@@ -353,11 +382,16 @@ class _AdminPeopleTab extends StatefulWidget {
 
 class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  String _search = '';
+  String? _deptFilter;
+  String? _statusFilter;
+
+  final Set<String> _selectedStudentIds = {};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -383,6 +417,71 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
       context: context,
       builder: (ctx) => _BulkAddDialog(
         onSuccess: widget.onReload,
+      ),
+    );
+  }
+
+  void _showAssignTutorDialog({List<String>? preselectedIds}) {
+    final studentIds = preselectedIds ?? _selectedStudentIds.toList();
+    if (studentIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select at least one student to assign a tutor')),
+      );
+      return;
+    }
+
+    final tutors = widget.users.where((u) => u['role'] == 'TUTOR' && u['status'] == 'ACTIVE').toList();
+    String? chosenTutorId;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c, setDState) => AlertDialog(
+          title: Text('Assign Tutor (${studentIds.length} students)'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Select the faculty tutor for the chosen students:', style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: chosenTutorId,
+                decoration: const InputDecoration(labelText: 'Tutor'),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Remove Tutor Assignment')),
+                  ...tutors.map((t) => DropdownMenuItem<String>(
+                        value: t['id'] as String,
+                        child: Text('${t['name']} (${t['department'] ?? 'Dept'})'),
+                      )),
+                ],
+                onChanged: (v) => setDState(() => chosenTutorId = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () async {
+                final state = AppStateScope.of(context);
+                try {
+                  final count = await state.api.adminAssignTutors(studentIds, chosenTutorId);
+                  if (context.mounted) {
+                    Navigator.pop(ctx);
+                    setState(() => _selectedStudentIds.clear());
+                    widget.onReload();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Assigned tutor for $count student(s)')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                  }
+                }
+              },
+              child: const Text('Assign'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -416,18 +515,39 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
   }
 
   Future<void> _toggleDeactivate(Map<String, dynamic> user) async {
-    final state = AppStateScope.of(context);
-    final newStatus = user['status'] == 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
-    try {
-      await state.api.adminUpdateUser(user['id'], {'status': newStatus});
-      widget.onReload();
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(user['status'] == 'INACTIVE' ? 'Reactivate User?' : 'Deactivate User?'),
+        content: Text(user['status'] == 'INACTIVE'
+            ? 'Allow ${user['name']} to log in again?'
+            : 'Deactivating will block ${user['name']} from logging in until reactivated.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(user['status'] == 'INACTIVE' ? 'Reactivate' : 'Deactivate'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final state = AppStateScope.of(context);
+      final newStatus = user['status'] == 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
+      try {
+        await state.api.adminUpdateUser(user['id'], {'status': newStatus});
+        widget.onReload();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final activeUsers = widget.users.where((u) => u['status'] != 'DELETED').toList();
+
     return Column(
       children: [
         Container(
@@ -440,7 +560,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
                   children: [
                     Expanded(
                       child: Text(
-                        'Total: ${widget.users.length} members',
+                        'Total: ${activeUsers.length} members',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                       ),
                     ),
@@ -458,21 +578,100 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
                   ],
                 ),
               ),
+
+              // Search and filters
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          hintText: 'Search name or phone...',
+                          prefixIcon: Icon(Icons.search, size: 18),
+                          isDense: true,
+                        ),
+                        onChanged: (v) => setState(() => _search = v.trim()),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: DropdownButtonFormField<String>(
+                        value: _deptFilter,
+                        decoration: const InputDecoration(isDense: true, labelText: 'Dept'),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('All Depts')),
+                          ...widget.departments.map((d) => DropdownMenuItem<String>(
+                                value: d['code'] as String,
+                                child: Text(d['code'] as String),
+                              )),
+                        ],
+                        onChanged: (v) => setState(() => _deptFilter = v),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: DropdownButtonFormField<String>(
+                        value: _statusFilter,
+                        decoration: const InputDecoration(isDense: true, labelText: 'Status'),
+                        items: const [
+                          DropdownMenuItem(value: null, child: Text('All')),
+                          DropdownMenuItem(value: 'ACTIVE', child: Text('Active')),
+                          DropdownMenuItem(value: 'INACTIVE', child: Text('Inactive')),
+                        ],
+                        onChanged: (v) => setState(() => _statusFilter = v),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
               TabBar(
                 controller: _tabController,
+                isScrollable: true,
                 labelColor: AppTheme.adminAccent,
                 unselectedLabelColor: AppTheme.textMuted,
                 indicatorColor: AppTheme.adminAccent,
                 tabs: [
-                  Tab(text: 'Students (${widget.users.where((u) => u['role'] == 'STUDENT').length})'),
-                  Tab(text: 'Tutors (${widget.users.where((u) => u['role'] == 'TUTOR').length})'),
-                  Tab(text: 'HODs (${widget.users.where((u) => u['role'] == 'HOD').length})'),
-                  Tab(text: 'Guards (${widget.users.where((u) => u['role'] == 'GUARD').length})'),
+                  Tab(text: 'Students (${activeUsers.where((u) => u['role'] == 'STUDENT').length})'),
+                  Tab(text: 'Tutors (${activeUsers.where((u) => u['role'] == 'TUTOR').length})'),
+                  Tab(text: 'HODs (${activeUsers.where((u) => u['role'] == 'HOD').length})'),
+                  Tab(text: 'Guards (${activeUsers.where((u) => u['role'] == 'GUARD').length})'),
+                  Tab(text: 'Admins (${activeUsers.where((u) => u['role'] == 'ADMIN').length})'),
                 ],
               ),
             ],
           ),
         ),
+
+        // Action banner for batch tutor assignment
+        if (_selectedStudentIds.isNotEmpty)
+          Container(
+            color: AppTheme.primaryLight.withOpacity(0.2),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Text(
+                  '${_selectedStudentIds.length} student(s) selected',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => setState(() => _selectedStudentIds.clear()),
+                  child: const Text('Clear'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => _showAssignTutorDialog(),
+                  icon: const Icon(Icons.person_add, size: 16),
+                  label: const Text('Assign Tutor'),
+                ),
+              ],
+            ),
+          ),
+
         Expanded(
           child: TabBarView(
             controller: _tabController,
@@ -481,6 +680,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
               _buildRoleList('TUTOR'),
               _buildRoleList('HOD'),
               _buildRoleList('GUARD'),
+              _buildRoleList('ADMIN'),
             ],
           ),
         ),
@@ -489,12 +689,26 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
   }
 
   Widget _buildRoleList(String role) {
-    final list = widget.users.where((u) => u['role'] == role).toList();
+    final list = widget.users.where((u) {
+      if (u['status'] == 'DELETED') return false;
+      if (u['role'] != role) return false;
+
+      final name = (u['name'] as String? ?? '').toLowerCase();
+      final phone = (u['mobile'] as String? ?? '').toLowerCase();
+      final q = _search.toLowerCase();
+      if (_search.isNotEmpty && !name.contains(q) && !phone.contains(q)) return false;
+
+      if (_deptFilter != null && u['department'] != _deptFilter) return false;
+      if (_statusFilter != null && u['status'] != _statusFilter) return false;
+
+      return true;
+    }).toList();
+
     if (list.isEmpty) {
       return EmptyState(
         icon: AppTheme.roleIcon(role),
-        title: 'No ${role.toLowerCase()}s found',
-        subtitle: 'Click "Add Person" or import via CSV to register users.',
+        title: 'No ${role.toLowerCase()}s match',
+        subtitle: 'Click "Add Person" or adjust your search filters.',
       );
     }
 
@@ -505,26 +719,44 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
       itemBuilder: (ctx, i) {
         final u = list[i];
         final isInactive = u['status'] == 'INACTIVE';
+        final isStudent = role == 'STUDENT';
+        final studentInfo = u['student'] as Map? ?? {};
+        final isSelected = _selectedStudentIds.contains(u['id']);
+
         return Card(
           child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: isInactive
-                  ? Colors.grey.shade300
-                  : AppTheme.roleColor(role).withOpacity(0.15),
-              child: Icon(
-                AppTheme.roleIcon(role),
-                color: isInactive ? Colors.grey : AppTheme.roleColor(role),
-                size: 20,
-              ),
-            ),
+            leading: isStudent
+                ? Checkbox(
+                    value: isSelected,
+                    onChanged: (val) {
+                      setState(() {
+                        if (val == true) {
+                          _selectedStudentIds.add(u['id']);
+                        } else {
+                          _selectedStudentIds.remove(u['id']);
+                        }
+                      });
+                    },
+                  )
+                : CircleAvatar(
+                    backgroundColor: isInactive
+                        ? Colors.grey.shade300
+                        : AppTheme.roleColor(role).withOpacity(0.15),
+                    child: Icon(
+                      AppTheme.roleIcon(role),
+                      color: isInactive ? Colors.grey : AppTheme.roleColor(role),
+                      size: 20,
+                    ),
+                  ),
             title: Row(
               children: [
                 Expanded(
                   child: Text(
-                    u['name'] ?? 'Unnamed',
+                    u['name'] ?? '',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       decoration: isInactive ? TextDecoration.lineThrough : null,
+                      color: isInactive ? AppTheme.textMuted : null,
                     ),
                   ),
                 ),
@@ -532,21 +764,38 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.red.shade100,
+                      color: Colors.red.shade50,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text('Deactivated', style: TextStyle(fontSize: 10, color: Colors.red)),
                   ),
               ],
             ),
-            subtitle: Text(
-              '${u['mobile']} · Dept: ${u['department'] ?? 'None'}${role == 'STUDENT' ? ' · Sem ${u['semester'] ?? 1}' : ''}',
-              style: const TextStyle(fontSize: 12),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${u['mobile']} · Dept: ${u['department'] ?? 'None'}',
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                ),
+                if (isStudent) ...[
+                  Text(
+                    'Reg: ${studentInfo['registerNo'] ?? '-'} · Sem: ${studentInfo['semester'] ?? '-'} · Tutor: ${studentInfo['tutor']?['name'] ?? 'Not assigned'}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: studentInfo['tutor'] != null ? AppTheme.tutorAccent : Colors.orange.shade800,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ],
             ),
             trailing: PopupMenuButton<String>(
               onSelected: (val) {
                 if (val == 'edit') {
                   _showAddPersonDialog(editUser: u);
+                } else if (val == 'assign_tutor') {
+                  _showAssignTutorDialog(preselectedIds: [u['id']]);
                 } else if (val == 'toggle') {
                   _toggleDeactivate(u);
                 } else if (val == 'delete') {
@@ -554,10 +803,12 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
                 }
               },
               itemBuilder: (c) => [
-                const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                const PopupMenuItem(value: 'edit', child: Text('Edit Person & Role')),
+                if (isStudent)
+                  const PopupMenuItem(value: 'assign_tutor', child: Text('Assign Tutor')),
                 PopupMenuItem(
                   value: 'toggle',
-                  child: Text(isInactive ? 'Activate' : 'Deactivate'),
+                  child: Text(isInactive ? 'Reactivate' : 'Deactivate'),
                 ),
                 const PopupMenuItem(
                   value: 'delete',
@@ -572,7 +823,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
   }
 }
 
-// Dialog: Add/Edit Person
+// Dialog: Add/Edit Person (Supports Role changes & all fields)
 class _PersonFormDialog extends StatefulWidget {
   const _PersonFormDialog({
     this.editUser,
@@ -598,6 +849,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
   String? _department;
   String? _tutorId;
   int _semester = 1;
+  String? _registerNo;
   bool _busy = false;
 
   @override
@@ -608,8 +860,11 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
     _mobile = u?['mobile'] ?? '';
     _role = u?['role'] ?? 'STUDENT';
     _department = u?['department'] ?? (widget.departments.isNotEmpty ? widget.departments.first['code'] : 'CSE');
-    _tutorId = u?['tutorId'];
-    _semester = u?['semester'] ?? 1;
+
+    final student = u?['student'] as Map? ?? {};
+    _tutorId = student['tutorId'];
+    _semester = student['semester'] ?? 1;
+    _registerNo = student['registerNo'];
   }
 
   Future<void> _submit() async {
@@ -619,7 +874,6 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
     final cleanMobile = _mobile.replaceAll(RegExp(r'\D+'), '');
     final normMobile = cleanMobile.length > 10 ? cleanMobile.substring(cleanMobile.length - 10) : cleanMobile;
 
-    // Check duplicate phone
     final isEdit = widget.editUser != null;
     final exists = widget.allUsers.any((u) =>
         u['mobile'] == normMobile && (!isEdit || u['id'] != widget.editUser!['id']));
@@ -641,6 +895,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
         if (_role == 'STUDENT') ...{
           'semester': _semester,
           if (_tutorId != null) 'tutorId': _tutorId,
+          if (_registerNo != null && _registerNo!.isNotEmpty) 'registerNo': _registerNo,
         },
       };
 
@@ -660,7 +915,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final tutors = widget.allUsers.where((u) => u['role'] == 'TUTOR').toList();
+    final tutors = widget.allUsers.where((u) => u['role'] == 'TUTOR' && u['status'] != 'DELETED').toList();
     final isEdit = widget.editUser != null;
 
     return AlertDialog(
@@ -695,12 +950,13 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _role,
-                decoration: const InputDecoration(labelText: 'Role'),
+                decoration: const InputDecoration(labelText: 'Role (Changeable)'),
                 items: const [
                   DropdownMenuItem(value: 'STUDENT', child: Text('Student')),
                   DropdownMenuItem(value: 'TUTOR', child: Text('Tutor')),
                   DropdownMenuItem(value: 'HOD', child: Text('HOD')),
                   DropdownMenuItem(value: 'GUARD', child: Text('Security Guard')),
+                  DropdownMenuItem(value: 'ADMIN', child: Text('Administrator')),
                 ],
                 onChanged: (v) => setState(() => _role = v!),
               ),
@@ -718,9 +974,15 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
               ),
               if (_role == 'STUDENT') ...[
                 const SizedBox(height: 12),
+                TextFormField(
+                  initialValue: _registerNo,
+                  decoration: const InputDecoration(labelText: 'Register / Roll No'),
+                  onSaved: (v) => _registerNo = v?.trim(),
+                ),
+                const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                   value: _semester,
-                  decoration: const InputDecoration(labelText: 'Semester'),
+                  decoration: const InputDecoration(labelText: 'Semester / Year'),
                   items: List.generate(8, (i) => i + 1).map((s) {
                     return DropdownMenuItem(value: s, child: Text('Semester $s'));
                   }).toList(),
@@ -734,7 +996,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
                     const DropdownMenuItem(value: null, child: Text('None / Select Tutor')),
                     ...tutors.map((t) => DropdownMenuItem<String>(
                           value: t['id'] as String,
-                          child: Text('${t['name']} (${t['department']})'),
+                          child: Text('${t['name']} (${t['department'] ?? 'Dept'})'),
                         )),
                   ],
                   onChanged: (v) => setState(() => _tutorId = v),
@@ -748,14 +1010,14 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(
           onPressed: _busy ? null : _submit,
-          child: Text(_busy ? 'Saving…' : (isEdit ? 'Update' : 'Register')),
+          child: Text(_busy ? 'Saving…' : (isEdit ? 'Update Person' : 'Register')),
         ),
       ],
     );
   }
 }
 
-// Dialog: Bulk Add CSV
+// Dialog: Bulk Add CSV with Preview & Validation Report
 class _BulkAddDialog extends StatefulWidget {
   const _BulkAddDialog({required this.onSuccess});
 
@@ -769,28 +1031,70 @@ class _BulkAddDialogState extends State<_BulkAddDialog> {
   final _controller = TextEditingController(
     text: 'Anoop Nair, 9876543210, STUDENT, CSE\n'
         'Smitha George, 9876543211, TUTOR, ECE\n'
-        'Ramanathan, 9876543212, GUARD, Security',
+        'Dr. Jayaraj, 9876543212, HOD, CSE\n'
+        'Ramanathan, 9876543213, GUARD, Security',
   );
   bool _busy = false;
+  bool _showPreview = false;
+  List<Map<String, String>> _parsedValid = [];
+  List<String> _parseErrors = [];
+
+  void _parseAndPreview() {
+    final lines = _controller.text.split('\n');
+    final valid = <Map<String, String>>[];
+    final errors = <String>[];
+
+    final validRoles = {'STUDENT', 'TUTOR', 'HOD', 'GUARD', 'ADMIN'};
+
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i].trim();
+      if (line.isEmpty) continue;
+      final parts = line.split(',');
+      if (parts.length < 4) {
+        errors.add('Line ${i + 1}: expected 4 fields (Name, Phone, Role, Dept). Found ${parts.length}');
+        continue;
+      }
+
+      final name = parts[0].trim();
+      final phone = parts[1].replaceAll(RegExp(r'\D+'), '');
+      final normPhone = phone.length > 10 ? phone.substring(phone.length - 10) : phone;
+      final role = parts[2].trim().toUpperCase();
+      final dept = parts[3].trim();
+
+      if (name.isEmpty) {
+        errors.add('Line ${i + 1}: Name cannot be empty');
+        continue;
+      }
+      if (normPhone.length != 10) {
+        errors.add('Line ${i + 1}: Phone must be 10 digits (got "${parts[1].trim()}")');
+        continue;
+      }
+      if (!validRoles.contains(role)) {
+        errors.add('Line ${i + 1}: Role must be STUDENT, TUTOR, HOD, GUARD, or ADMIN (got "$role")');
+        continue;
+      }
+
+      valid.add({
+        'name': name,
+        'phone': normPhone,
+        'role': role,
+        'department': dept,
+      });
+    }
+
+    setState(() {
+      _parsedValid = valid;
+      _parseErrors = errors;
+      _showPreview = true;
+    });
+  }
 
   Future<void> _submit() async {
+    if (_parsedValid.isEmpty) return;
     setState(() => _busy = true);
     final state = AppStateScope.of(context);
     try {
-      final lines = _controller.text.split('\n');
-      final rows = <Map<String, String>>[];
-      for (final line in lines) {
-        final parts = line.split(',');
-        if (parts.length >= 4) {
-          rows.add({
-            'name': parts[0].trim(),
-            'phone': parts[1].trim(),
-            'role': parts[2].trim(),
-            'department': parts[3].trim(),
-          });
-        }
-      }
-      final count = await state.api.adminBulkAddUsers(rows);
+      final count = await state.api.adminBulkAddUsers(_parsedValid);
       widget.onSuccess();
       if (mounted) {
         Navigator.pop(context);
@@ -808,40 +1112,75 @@ class _BulkAddDialogState extends State<_BulkAddDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Bulk Add People (CSV)'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Format per line:\nName, Phone (10 digits), Role (STUDENT/TUTOR/HOD/GUARD), Department',
-              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _controller,
-              maxLines: 8,
-              decoration: const InputDecoration(
-                hintText: 'Paste CSV rows here...',
-              ),
-            ),
-          ],
+      title: Text(_showPreview ? 'CSV Import Preview' : 'Bulk Add People (CSV)'),
+      content: SizedBox(
+        width: 480,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!_showPreview) ...[
+                const Text(
+                  'Format per line:\nName, Phone (10 digits), Role (STUDENT/TUTOR/HOD/GUARD/ADMIN), Department',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _controller,
+                  maxLines: 8,
+                  decoration: const InputDecoration(
+                    hintText: 'Paste CSV rows here...',
+                  ),
+                ),
+              ] else ...[
+                if (_parseErrors.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Errors (${_parseErrors.length} lines skipped):', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 13)),
+                        const SizedBox(height: 4),
+                        ..._parseErrors.take(4).map((e) => Text('• $e', style: const TextStyle(fontSize: 11, color: Colors.red))),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Text('Valid entries to import (${_parsedValid.length}):', style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                ..._parsedValid.map((r) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text('• ${r['name']} (${r['phone']}) — ${r['role']} / ${r['department']}', style: const TextStyle(fontSize: 12)),
+                    )),
+              ],
+            ],
+          ),
         ),
       ),
       actions: [
+        if (_showPreview)
+          TextButton(onPressed: () => setState(() => _showPreview = false), child: const Text('Back to Edit')),
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(
-          onPressed: _busy ? null : _submit,
-          child: Text(_busy ? 'Importing…' : 'Import Users'),
-        ),
+        if (!_showPreview)
+          FilledButton(onPressed: _parseAndPreview, child: const Text('Preview & Validate'))
+        else
+          FilledButton(
+            onPressed: _busy || _parsedValid.isEmpty ? null : _submit,
+            child: Text(_busy ? 'Importing…' : 'Import ${_parsedValid.length} Users'),
+          ),
       ],
     );
   }
 }
 
 // ==========================================
-// 3. DEPARTMENTS TAB
+// 3. DEPARTMENTS TAB (CRUD + Block delete if has people)
 // ==========================================
 class _AdminDepartmentsTab extends StatelessWidget {
   const _AdminDepartmentsTab({
@@ -858,7 +1197,7 @@ class _AdminDepartmentsTab extends StatelessWidget {
     final codeCtrl = TextEditingController(text: dept?['code'] ?? '');
     final nameCtrl = TextEditingController(text: dept?['name'] ?? '');
     String? hodId = dept?['hodId'];
-    final hods = users.where((u) => u['role'] == 'HOD').toList();
+    final hods = users.where((u) => u['role'] == 'HOD' && u['status'] != 'DELETED').toList();
 
     showDialog(
       context: context,
@@ -917,6 +1256,43 @@ class _AdminDepartmentsTab extends StatelessWidget {
     );
   }
 
+  Future<void> _deleteDepartment(BuildContext context, Map<String, dynamic> dept) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${dept['code']}?'),
+        content: Text('Are you sure you want to delete department ${dept['name']}? Departments containing active members cannot be deleted.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final state = AppStateScope.of(context);
+      try {
+        await state.api.adminDeleteDepartment(dept['id']);
+        onReload();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Deleted department ${dept['code']}')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cannot delete: $e')),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -934,6 +1310,8 @@ class _AdminDepartmentsTab extends StatelessWidget {
               itemBuilder: (ctx, i) {
                 final d = departments[i];
                 final hod = users.firstWhere((u) => u['id'] == d['hodId'], orElse: () => null);
+                final memberCount = users.where((u) => u['department'] == d['code'] && u['status'] != 'DELETED').length;
+
                 return Card(
                   child: ListTile(
                     leading: CircleAvatar(
@@ -944,17 +1322,34 @@ class _AdminDepartmentsTab extends StatelessWidget {
                       ),
                     ),
                     title: Text(d['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(
-                      hod != null ? 'HOD: ${hod['name']} (${hod['mobile']})' : 'HOD: None assigned',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: hod != null ? AppTheme.hodAccent : AppTheme.textMuted,
-                        fontWeight: hod != null ? FontWeight.w600 : FontWeight.normal,
-                      ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hod != null ? 'HOD: ${hod['name']} (${hod['mobile']})' : 'HOD: None assigned',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: hod != null ? AppTheme.hodAccent : AppTheme.textMuted,
+                            fontWeight: hod != null ? FontWeight.w600 : FontWeight.normal,
+                          ),
+                        ),
+                        Text('$memberCount active person(s) in this department', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      ],
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => _showDeptDialog(context, dept: d),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          tooltip: 'Edit department',
+                          onPressed: () => _showDeptDialog(context, dept: d),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.red),
+                          tooltip: 'Delete department',
+                          onPressed: () => _deleteDepartment(context, d),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -965,16 +1360,18 @@ class _AdminDepartmentsTab extends StatelessWidget {
 }
 
 // ==========================================
-// 4. OUTPASS MONITOR TAB
+// 4. OUTPASS MONITOR TAB (Filters + Detail + Cancel)
 // ==========================================
 class _AdminOutpassMonitorTab extends StatefulWidget {
   const _AdminOutpassMonitorTab({
     required this.outpasses,
     required this.departments,
+    required this.onReload,
   });
 
   final List<dynamic> outpasses;
   final List<dynamic> departments;
+  final VoidCallback onReload;
 
   @override
   State<_AdminOutpassMonitorTab> createState() => _AdminOutpassMonitorTabState();
@@ -985,11 +1382,25 @@ class _AdminOutpassMonitorTabState extends State<_AdminOutpassMonitorTab> {
   String? _statusFilter;
   String? _deptFilter;
 
+  void _showOutpassDetail(Map<String, dynamic> outpass) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => _OutpassDetailSheet(
+        outpass: outpass,
+        onCancelled: () {
+          Navigator.pop(ctx);
+          widget.onReload();
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = widget.outpasses.where((o) {
       final student = o['student'] as Map? ?? {};
-      final name = (student['name'] as String? ?? '').toLowerCase();
+      final name = (student['user']?['name'] as String? ?? '').toLowerCase();
       final reg = (student['registerNo'] as String? ?? '').toLowerCase();
       final disp = (o['displayId'] as String? ?? '').toLowerCase();
       final query = _search.toLowerCase();
@@ -1070,37 +1481,44 @@ class _AdminOutpassMonitorTabState extends State<_AdminOutpassMonitorTab> {
                   itemBuilder: (ctx, i) {
                     final o = filtered[i];
                     final s = o['student'] as Map? ?? {};
+                    final user = s['user'] as Map? ?? {};
                     return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(o['displayId'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                StatusChip(status: o['status'] ?? 'PENDING_TUTOR'),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text('${s['name']} (${s['registerNo']}) · ${s['department']}',
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                            const SizedBox(height: 4),
-                            Text('${o['purposeCategory']} · ${o['destination']}',
-                                style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                const Icon(Icons.schedule, size: 14, color: AppTheme.textMuted),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Exit: ${o['requestedExitAt'] != null ? DateTime.parse(o['requestedExitAt']).toLocal().toString().substring(0, 16) : '-'}',
-                                  style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                                ),
-                              ],
-                            ),
-                          ],
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+                        onTap: () => _showOutpassDetail(o),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(o['displayId'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  StatusChip(status: o['status'] ?? 'PENDING_TUTOR'),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text('${user['name'] ?? 'Student'} (${s['registerNo'] ?? ''}) · ${s['department'] ?? ''}',
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                              const SizedBox(height: 4),
+                              Text('${o['purposeCategory']} · ${o['destination']}',
+                                  style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  const Icon(Icons.schedule, size: 14, color: AppTheme.textMuted),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Exit: ${o['requestedExitAt'] != null ? DateTime.parse(o['requestedExitAt']).toLocal().toString().substring(0, 16) : '-'}',
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                                  ),
+                                  const Spacer(),
+                                  const Text('Details →', style: TextStyle(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -1112,8 +1530,103 @@ class _AdminOutpassMonitorTabState extends State<_AdminOutpassMonitorTab> {
   }
 }
 
+class _OutpassDetailSheet extends StatelessWidget {
+  const _OutpassDetailSheet({
+    required this.outpass,
+    required this.onCancelled,
+  });
+
+  final Map<String, dynamic> outpass;
+  final VoidCallback onCancelled;
+
+  Future<void> _cancelPass(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel Outpass?'),
+        content: Text('Are you sure you want to cancel pass ${outpass['displayId']}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Yes, Cancel Pass'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final state = AppStateScope.of(context);
+      try {
+        await state.api.adminCancelOutpass(outpass['id']);
+        onCancelled();
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = outpass['student'] as Map? ?? {};
+    final user = s['user'] as Map? ?? {};
+    final status = outpass['status'] as String? ?? 'PENDING_TUTOR';
+    final canCancel = !['RETURNED', 'CANCELLED', 'REJECTED'].contains(status);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(outpass['displayId'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              StatusChip(status: status),
+            ],
+          ),
+          const Divider(height: 24),
+          _detailRow('Student', '${user['name'] ?? 'Student'} (${s['registerNo'] ?? ''})'),
+          _detailRow('Department', s['department'] ?? '-'),
+          _detailRow('Destination', outpass['destination'] ?? '-'),
+          _detailRow('Category', outpass['purposeCategory'] ?? '-'),
+          if (outpass['purposeText'] != null)
+            _detailRow('Reason', outpass['purposeText']),
+          _detailRow('Exit Time', outpass['requestedExitAt'] != null ? DateTime.parse(outpass['requestedExitAt']).toLocal().toString().substring(0, 16) : '-'),
+          _detailRow('Expected Return', outpass['expectedReturnAt'] != null ? DateTime.parse(outpass['expectedReturnAt']).toLocal().toString().substring(0, 16) : '-'),
+          const SizedBox(height: 20),
+          if (canCancel)
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => _cancelPass(context),
+              icon: const Icon(Icons.cancel),
+              label: const Text('Admin Cancel This Outpass'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 120, child: Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 13))),
+          Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+        ],
+      ),
+    );
+  }
+}
+
 // ==========================================
-// 5. SETTINGS TAB
+// 5. SETTINGS TAB (Database backed)
 // ==========================================
 class _AdminSettingsTab extends StatefulWidget {
   const _AdminSettingsTab({
@@ -1129,49 +1642,53 @@ class _AdminSettingsTab extends StatefulWidget {
 }
 
 class _AdminSettingsTabState extends State<_AdminSettingsTab> {
-  late TextEditingController _collegeNameCtrl;
+  late TextEditingController _collegeCtrl;
   late TextEditingController _dwellCtrl;
   late TextEditingController _catCtrl;
-  bool _busy = false;
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _collegeNameCtrl = TextEditingController(text: widget.settings['collegeName'] ?? 'Christ College of Engineering, Irinjalakuda');
-    _dwellCtrl = TextEditingController(text: (widget.settings['minDwellMinutes'] ?? 10).toString());
-    final cats = (widget.settings['categories'] as List?)?.cast<String>() ?? ['Medical', 'Personal', 'Official', 'Academic', 'Emergency'];
-    _catCtrl = TextEditingController(text: cats.join(', '));
+    _initValues();
   }
 
   @override
-  void dispose() {
-    _collegeNameCtrl.dispose();
-    _dwellCtrl.dispose();
-    _catCtrl.dispose();
-    super.dispose();
+  void didUpdateWidget(covariant _AdminSettingsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.settings != widget.settings) {
+      _initValues();
+    }
+  }
+
+  void _initValues() {
+    _collegeCtrl = TextEditingController(text: widget.settings['collegeName'] ?? 'Christ College of Engineering, Irinjalakuda');
+    _dwellCtrl = TextEditingController(text: '${widget.settings['minDwellMinutes'] ?? 10}');
+    final cats = widget.settings['categories'] as List? ?? ['Medical', 'Personal', 'Official', 'Academic', 'Emergency'];
+    _catCtrl = TextEditingController(text: cats.join(', '));
   }
 
   Future<void> _save() async {
-    setState(() => _busy = true);
+    setState(() => _saving = true);
     final state = AppStateScope.of(context);
     try {
-      final name = _collegeNameCtrl.text.trim();
       final dwell = int.tryParse(_dwellCtrl.text.trim()) ?? 10;
       final cats = _catCtrl.text.split(',').map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
-
       await state.api.adminUpdateSettings(
-        collegeName: name,
+        collegeName: _collegeCtrl.text.trim(),
         minDwellMinutes: dwell,
         categories: cats,
       );
       widget.onReload();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings saved successfully')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Settings saved successfully in database')),
+        );
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -1182,16 +1699,15 @@ class _AdminSettingsTabState extends State<_AdminSettingsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const Text('College Configuration', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 12),
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('College Configuration', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 16),
                   TextField(
-                    controller: _collegeNameCtrl,
+                    controller: _collegeCtrl,
                     decoration: const InputDecoration(labelText: 'College Name'),
                   ),
                   const SizedBox(height: 16),
@@ -1199,31 +1715,99 @@ class _AdminSettingsTabState extends State<_AdminSettingsTab> {
                     controller: _dwellCtrl,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                      labelText: 'Minimum Return Dwell Time (minutes)',
-                      helperText: 'Enforces anti-passback delay before a student can re-enter campus',
+                      labelText: 'Minimum Gate Return Dwell Time (minutes)',
+                      helperText: 'Enforced before return scan is valid (SEC-RET-01)',
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _catCtrl,
-                    maxLines: 2,
                     decoration: const InputDecoration(
-                      labelText: 'Outpass Purpose Categories (comma-separated)',
-                      helperText: 'Options available for students when requesting an outpass',
+                      labelText: 'Outpass Categories (comma-separated)',
+                      helperText: 'Available choices for students when requesting an outpass',
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _busy ? null : _save,
-                    icon: const Icon(Icons.save),
-                    label: Text(_busy ? 'Saving…' : 'Save Changes'),
                   ),
                 ],
               ),
             ),
           ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: const Icon(Icons.save),
+            label: Text(_saving ? 'Saving…' : 'Save Settings'),
+          ),
         ],
       ),
+    );
+  }
+}
+
+// ==========================================
+// 6. AUDIT LOG TAB
+// ==========================================
+class _AdminAuditTab extends StatelessWidget {
+  const _AdminAuditTab({
+    required this.auditLogs,
+    required this.onReload,
+  });
+
+  final List<dynamic> auditLogs;
+  final VoidCallback onReload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: auditLogs.isEmpty
+          ? const EmptyState(
+              icon: Icons.history,
+              title: 'No audit records',
+              subtitle: 'System changes and events will be permanently logged here',
+            )
+          : ListView.separated(
+              padding: AppTheme.screenPadding,
+              itemCount: auditLogs.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (ctx, i) {
+                final log = auditLogs[i];
+                final action = (log['action'] as String? ?? '').replaceAll('_', ' ');
+                final at = log['at'] != null ? DateTime.parse(log['at']).toLocal().toString().substring(0, 19) : '';
+                final detail = log['detail'];
+
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(action, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppTheme.adminAccent.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(log['actorRole'] ?? 'SYSTEM', style: const TextStyle(fontSize: 10, color: AppTheme.adminAccent, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text('Target: ${log['objectType'] ?? '-'} · ID: ${log['objectId'] ?? '-'}', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                        if (detail != null) ...[
+                          const SizedBox(height: 4),
+                          Text('$detail', style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Colors.black87)),
+                        ],
+                        const SizedBox(height: 4),
+                        Text(at, style: const TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }

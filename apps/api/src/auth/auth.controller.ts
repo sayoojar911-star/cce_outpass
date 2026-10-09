@@ -1,11 +1,21 @@
 import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Auth } from '../common/auth.decorator';
-import { RegisterDeviceDto, FirebaseTokenDto, RefreshDto } from './dto';
+import { RegisterDeviceDto, FirebaseTokenDto, RefreshDto, SendOtpDto, VerifyOtpDto } from './dto';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
+
+  @Post('otp/send')
+  sendOtp(@Body() dto: SendOtpDto) {
+    return this.auth.sendOtp(dto.mobile);
+  }
+
+  @Post('otp/verify')
+  verifyOtp(@Body() dto: VerifyOtpDto) {
+    return this.auth.verifyOtp(dto.mobile, dto.code);
+  }
 
   @Post('firebase/verify')
   verifyFirebasePhone(@Body() dto: FirebaseTokenDto) {

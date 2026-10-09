@@ -5,6 +5,22 @@ export function normalizeMobile(value: unknown): string {
   return cleaned.replace(/[^0-9]/g, '');
 }
 
+export class SendOtpDto {
+  @IsString()
+  @IsNotEmpty()
+  mobile: string;
+}
+
+export class VerifyOtpDto {
+  @IsString()
+  @IsNotEmpty()
+  mobile: string;
+
+  @IsString()
+  @IsNotEmpty()
+  code: string;
+}
+
 export class FirebaseTokenDto {
   @IsString()
   @IsNotEmpty()

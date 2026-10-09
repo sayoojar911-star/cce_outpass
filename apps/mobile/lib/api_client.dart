@@ -200,6 +200,12 @@ class ApiClient {
     await delete('/admin/departments/$id');
   }
 
+  Future<int> adminAssignTutors(List<String> studentIds, String? tutorId) async {
+    final res = await post('/admin/tutors/assign',
+        body: {'studentIds': studentIds, 'tutorId': tutorId});
+    return (res['count'] as num).toInt();
+  }
+
   Future<List<dynamic>> adminGetOutpasses() async {
     return (await get('/admin/outpasses') as List).cast<dynamic>();
   }

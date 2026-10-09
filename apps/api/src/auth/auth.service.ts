@@ -28,21 +28,94 @@ export class AuthService {
     private readonly firebaseAuth: FirebaseAuthService,
   ) {}
 
-  async verifyFirebasePhone(idToken: string) {
-    const phoneNumber = await this.firebaseAuth.verifyPhoneIdToken(idToken);
-    const mobile = normalizeMobile(phoneNumber);
+  // TODO: Replace temporary OTP validation with real SMS provider (Firebase Auth / SMS Gateway) before production.
+  private checkOtp(mobile: string, code: string): boolean {
+    const tempOtpEnabled = process.env.TEMP_OTP_ENABLED !== 'false';
+    if (tempOtpEnabled && code === '123456') {
+      return true;
+    }
+    return false;
+  }
 
-    // TempAuthConfig.ADMIN_PHONE is always ADMIN
+  async sendOtp(rawMobile: string) {
+    const mobile = normalizeMobile(rawMobile);
+    const adminPhone = process.env.ADMIN_PHONE || TempAuthConfig.ADMIN_PHONE;
+
     let user = await this.prisma.user.findFirst({
-      where: { mobile, status: 'ACTIVE' },
+      where: { mobile },
     });
 
-    if (!user && mobile === TempAuthConfig.ADMIN_PHONE) {
+    if (!user && mobile === adminPhone) {
       user = await this.prisma.user.create({
         data: {
           name: 'System Administrator',
           role: 'ADMIN',
-          mobile: TempAuthConfig.ADMIN_PHONE,
+          mobile: adminPhone,
+          status: 'ACTIVE',
+        },
+      });
+    }
+
+    if (!user) {
+      throw new NotFoundException("This number isn't registered. Contact your admin.");
+    }
+
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('This account is deactivated. Contact your admin.');
+    }
+
+    return { ok: true, message: 'OTP sent successfully' };
+  }
+
+  async verifyOtp(rawMobile: string, code: string) {
+    const mobile = normalizeMobile(rawMobile);
+    const adminPhone = process.env.ADMIN_PHONE || TempAuthConfig.ADMIN_PHONE;
+
+    if (!this.checkOtp(mobile, code)) {
+      throw new UnauthorizedException('Invalid OTP. Please try again.');
+    }
+
+    let user = await this.prisma.user.findFirst({
+      where: { mobile },
+    });
+
+    if (!user && mobile === adminPhone) {
+      user = await this.prisma.user.create({
+        data: {
+          name: 'System Administrator',
+          role: 'ADMIN',
+          mobile: adminPhone,
+          status: 'ACTIVE',
+        },
+      });
+    }
+
+    if (!user) {
+      throw new NotFoundException("This number isn't registered. Contact your admin.");
+    }
+
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('This account is deactivated. Contact your admin.');
+    }
+
+    return this.createSession(user);
+  }
+
+  async verifyFirebasePhone(idToken: string) {
+    const phoneNumber = await this.firebaseAuth.verifyPhoneIdToken(idToken);
+    const mobile = normalizeMobile(phoneNumber);
+
+    const adminPhone = process.env.ADMIN_PHONE || TempAuthConfig.ADMIN_PHONE;
+    let user = await this.prisma.user.findFirst({
+      where: { mobile, status: 'ACTIVE' },
+    });
+
+    if (!user && mobile === adminPhone) {
+      user = await this.prisma.user.create({
+        data: {
+          name: 'System Administrator',
+          role: 'ADMIN',
+          mobile: adminPhone,
           status: 'ACTIVE',
         },
       });

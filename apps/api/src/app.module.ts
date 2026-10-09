@@ -15,7 +15,7 @@ import { ExpiryService } from './jobs/expiry.service';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
-    // Serves the built Flutter web app at / (single process for the demo).
+    // Serves the built Flutter web app at /
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', '..', 'public'),
       exclude: ['/v1*', '/v1/**'],

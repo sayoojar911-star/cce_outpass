@@ -33,7 +33,7 @@ The system serves 5 distinct user groups:
 | **Guard Gate Verification** | ✅ Finished | `guard_screen.dart`, `apps/api/src/gate/gate.service.ts` | Camera scanning via `mobile_scanner`, manual entry fallback, single-use check, min 10-min dwell check. |
 | **Audit Logging** | ✅ Finished | `apps/api/src/audit/audit.service.ts` | Append-only SHA-256 hash-chained audit ledger (`AuditLog` table). |
 | **Expiry & Overdue Automation** | ✅ Finished | `apps/api/src/jobs/expiry.service.ts` | Background cron job runs every minute, marking unused passes `EXPIRED` and unreturned students `OVERDUE` (+15 min grace). |
-| **In-Memory Demo / Mock Mode** | ✅ Finished | `apps/mobile/lib/mock_backend.dart` | Full standalone demo with admin-managed in-memory users, departments, and editable settings. |
+| **Real Production API Connection** | ✅ Finished | `apps/api` via Prisma / PostgreSQL | Zero mock backend. Flutter app connects exclusively to live NestJS API. |
 | **Push Notifications (FCM / APNS)** | 🟡 Half-done / Stubbed | `apps/api/src/notifications/notifications.service.ts` | Inserts rows into the DB `Notification` table; actual Firebase Cloud Messaging push dispatch is deferred. |
 | **SMS OTP Verification** | 🟡 Half-done | `login_screen.dart`, `firebase-auth.service.ts`, `temp_auth_config.dart` | Temporary OTP `123456` enabled for development; gated by admin registry check. |
 | **Device Hardware Attestation** | 🔴 Missing / Cut | `docs/decisions.md` (Decision #3), `apps/mobile/lib/qr_token.dart` | Software keys generated via `pointycastle`; hardware Secure Enclave / Android Keystore & Play Integrity are deferred. |
@@ -82,7 +82,7 @@ College-app/
 │   │   ├── tsconfig.json          # TypeScript compiler options
 │   │   ├── prisma/
 │   │   │   ├── schema.prisma      # Prisma schema (User, Student, OutpassRequest, Approval, GateEvent, AuditLog)
-│   │   │   └── seed.ts            # Database seed script for tutor, HOD, guard & demo students
+│   │   │   └── seed.ts            # Database seed script for system administrator, default gate & settings
 │   │   ├── scripts/
 │   │   │   └── daemon.cjs         # Background daemon runner script for Node.js API process
 │   │   ├── src/
@@ -148,18 +148,19 @@ College-app/
 ```mermaid
 graph TD
     subgraph Client ["Flutter Mobile / Web App (apps/mobile)"]
-        UI_Login["Login Screen / Demo Chips"]
+        UI_Login["Login Screen (Phone + Server OTP)"]
+        UI_Admin["Admin Console (CRUD, Depts, Monitor, Settings)"]
         UI_Student["Student Home & Request Form"]
         UI_QR["Rotating QR Screen (PointyCastle P-256)"]
         UI_Approver["Tutor / HOD Approval Screen"]
         UI_Guard["Guard Scanner (MobileScanner)"]
         AppState["AppState (ChangeNotifier)"]
-        ApiClient["ApiClient (HTTP / Mock Toggle)"]
-        MockDB["MockBackend (In-Memory Simulator)"]
+        ApiClient["ApiClient (HTTP client)"]
     end
 
     subgraph Server ["NestJS API Server (apps/api)"]
         AuthController["Auth Controller (/v1/auth)"]
+        AdminController["Admin Controller (/v1/admin)"]
         OutpassController["Outpass Controller (/v1/outpasses)"]
         ApprovalController["Approvals Controller (/v1/approvals)"]
         GateController["Gate Controller (/v1/gate)"]
@@ -175,14 +176,14 @@ graph TD
 
     %% Connections
     UI_Login --> AppState
+    UI_Admin --> AppState
     UI_Student --> AppState
     UI_QR --> AppState
     UI_Approver --> AppState
     UI_Guard --> AppState
 
     AppState --> ApiClient
-    ApiClient -.->|isDemoMode = true| MockDB
-    ApiClient -->|isDemoMode = false| Server
+    ApiClient -->|REST API calls| Server
 
     AuthController -->|Verify ID Token| Firebase
     AuthController --> PG
@@ -212,14 +213,9 @@ Below is the comprehensive audit across configuration, source, seed, and test fi
 | `apps/mobile/test/e2e_live.dart` | 51 | `http://localhost:3000/v1` | URLs & endpoints | **Low** | Move to environment variable. |
 | `apps/api/src/main.ts` | 11 | `3000` | URLs & endpoints | **Low** | Defaults port to 3000; already configurable via `process.env.PORT`. |
 | `apps/api/scripts/daemon.cjs` | 7 | `/tmp/api.log` | File paths / OS-specific | **Medium** | Linux/macOS specific path. Fails or writes inappropriately on Windows environments. Use `path.join(os.tmpdir(), 'api.log')`. |
-| `apps/mobile/lib/mock_backend.dart` | 28 | `9074****` | Fake / dummy data | **Low** | Mock student account. Move seeded test fixtures into a dedicated mock data fixture file. |
-| `apps/mobile/lib/mock_backend.dart` | 38, 48 | `9000****` | Fake / dummy data | **Low** | Mock student accounts (`Ananya S`, `Arjun R`). |
-| `apps/mobile/lib/mock_backend.dart` | 58, 65 | `9000****` | Fake / dummy data | **Low** | Mock faculty accounts (`Dr. Anand Kumar`, `Dr. Priya Menon`). |
-| `apps/mobile/lib/mock_backend.dart` | 72 | `9000****` | Fake / dummy data | **Low** | Mock security guard account (`Suresh`). |
-| `apps/api/prisma/seed.ts` | 7, 18, 29 | `9000****` | Fake / dummy data | **Low** | Seed faculty and guard phone numbers in PostgreSQL database. |
-| `apps/mobile/lib/login_screen.dart` | 59, 189 | `123456` | Auth shortcut / bypass | **Medium** | Hardcoded OTP bypass for demo mode. Ensure demo mode is explicitly disabled in release builds (`kReleaseMode`). |
-| `apps/mobile/lib/login_screen.dart` | 243, 248, 253, 258 | `9074****`, `9000****` | Auth shortcuts / dummy data | **Low** | Quick demo login buttons. Should only be visible if `isDemoMode` is enabled. |
-| `apps/mobile/lib/main.dart` | 38 | `Color(0xFF1B5E20)` | UI styling | **Low** | Hardcoded primary brand color. Move to a dedicated `AppTheme` / theme palette definition. |
+| `apps/mobile/lib/mock_backend.dart` | Deleted | - | Removed | **Resolved** | Mock backend completely deleted. Client connects solely to real NestJS API. |
+| `apps/mobile/lib/login_screen.dart` | Refactored | `TEMP_OTP_ENABLED` | Auth config | **Resolved** | Demo buttons removed. Login always requires phone and server-verified OTP. |
+| `apps/mobile/lib/main.dart` | Refactored | Unified AppTheme | UI styling | **Resolved** | Styled via unified `AppTheme` design tokens. |
 | `apps/mobile/lib/login_screen.dart` | 170 | `'Christ College of Engineering, Irinjalakuda'` | College-specific value | **Low** | Hardcoded institution name. Move to app configuration / branding constant. |
 | `apps/mobile/lib/student_screen.dart` | 258 | `['Medical', 'Family', 'Official', 'Home visit', 'Other']` | Business logic values | **Medium** | Fixed list of outpass categories. Move to database or configurable backend dictionary. |
 | `apps/api/src/gate/gate.service.ts` | 9 | `10 * 60 * 1000` (10 mins) | Business logic values | **Medium** | Minimum dwell time between exit and return. Extract to a configurable policy setting. |
@@ -301,58 +297,115 @@ FIREBASE_AUTH_DOMAIN=
 
 ---
 
-### Path A: Instant Run (Flutter App in Demo Mode — Zero DB Setup)
-This is the fastest way to test all screens immediately using the embedded mock backend:
+### Running the Real Application Stack
 
+The application has zero mock backend and connects exclusively to the real NestJS API with PostgreSQL via Prisma.
+
+#### 1. Start PostgreSQL with Docker
+From the project root:
 ```powershell
-# Navigate to mobile app directory
-cd "apps/mobile"
+docker compose up -d db
+```
+*(PostgreSQL 16 starts on host port `5433` with database `outpass`, user `outpass`, password `outpass`)*
 
-# Install Dart/Flutter packages
+#### 2. Run Database Migrations and Seed Admin User
+```powershell
+cd "apps/api"
+npm install
+
+# Run database migrations
+npx prisma migrate deploy
+
+# Seed initial database (creates ONLY the admin user, default gate, and default settings)
+npx prisma db seed
+```
+*(Default admin phone is `8921578838`, or whatever is specified in `ADMIN_PHONE` environment variable).*
+
+#### 3. Start the NestJS API
+```powershell
+# From apps/api:
+npm run start:dev
+```
+*(API will be running at `http://localhost:3000/v1` with CORS enabled for Flutter web clients).*
+
+#### 4. Start the Flutter Mobile / Web App
+In a separate terminal:
+```powershell
+cd "apps/mobile"
 flutter pub get
 
-# Launch app in Chrome with fixed port
-flutter run -d chrome --web-port 8080
+# Run on Chrome Web:
+flutter run -d chrome --web-port 8080 --dart-define=API_BASE_URL=http://localhost:3000/v1
+
+# Or run as Windows desktop application:
+flutter run -d windows --dart-define=API_BASE_URL=http://localhost:3000/v1
 ```
-*Open http://localhost:8080 in your browser. You can click any role chip (Student, Tutor, HOD, Guard) or enter OTP `123456` to walk through the entire loop.*
 
 ---
 
-### Path B: Full Stack Run (NestJS API + PostgreSQL + Flutter)
+### Step-by-Step Testing Guide: Role Allotment & Full Lifecycle
 
-1. **Start PostgreSQL:**
-   ```powershell
-   # If using Docker:
-   docker compose up -d db
-   
-   # Or using a local PostgreSQL 16 server:
-   # Ensure a database named 'outpass' is available on port 5433 (or update .env)
-   ```
+The app always begins at the Login screen. No auto-login or role switching without signing in.
 
-2. **Initialize & Start API Backend:**
-   ```powershell
-   cd "apps/api"
-   npm install
-   
-   # Generate Prisma client and migrate database
-   npx prisma generate
-   npx prisma migrate deploy
-   
-   # Seed test accounts (Dr. Anand, Dr. Priya, Suresh, students)
-   npx prisma db seed
-   
-   # Run the development server
-   npm run start:dev
-   ```
-   *The backend will be live at `http://localhost:3000/v1`.*
+#### Step 1: Admin Setup
+1. Open the app (`http://localhost:8080`).
+2. Log in with the seeded administrator phone:
+   - Mobile: `8921578838`
+   - Enter OTP: `123456`
+   - Click **Verify & Sign In** -> Admin Console opens.
+3. In the **Departments** tab:
+   - Confirm or add departments (e.g., `CSE` — Computer Science and Engineering).
+4. In the **People** tab:
+   - Click **Add Person** to create a **Tutor**:
+     * Name: `Dr. Anand Kumar`, Phone: `9000000001`, Role: `Tutor`, Dept: `CSE`.
+   - Click **Add Person** to create an **HOD**:
+     * Name: `Dr. Priya Menon`, Phone: `9000000002`, Role: `HOD`, Dept: `CSE`.
+   - Click **Add Person** to create a **Security Guard**:
+     * Name: `Suresh Guard`, Phone: `9000000090`, Role: `Security Guard`, Dept: `CSE`.
+   - Click **Add Person** to create a **Student**:
+     * Name: `Ananya S`, Phone: `9074121510`, Role: `Student`, Dept: `CSE`, Semester: `6`, Assigned Tutor: `Dr. Anand Kumar`.
+5. *(Optional)* In **Departments**, edit `CSE` to assign `Dr. Priya Menon` as HOD.
+6. Click the logout icon in the top right to sign out.
 
-3. **Start Flutter App in Connected Mode:**
-   ```powershell
-   cd "apps/mobile"
-   flutter run -d chrome --web-port 8080 --dart-define=IS_DEMO_MODE=false
-   ```
+#### Step 2: Student Creates an Outpass Request
+1. Enter Student mobile: `9074121510`, OTP: `123456`.
+2. Student Dashboard opens automatically.
+3. Click **+ Request Outpass**:
+   - Destination: `Medical Clinic`
+   - Purpose Category: `Medical`
+   - Reason: `Dentist appointment`
+   - Set Exit time and Expected return time.
+4. Click **Submit Outpass Request**.
+5. Status displays as **Pending Tutor Approval**.
+6. Log out.
 
----
+#### Step 3: Tutor Approves Request
+1. Enter Tutor mobile: `9000000001`, OTP: `123456`.
+2. Faculty Approvals dashboard opens showing Ananya's pending request.
+3. Tap the request card and click **Approve Request**.
+4. Request advances to **Pending HOD Approval**.
+5. Log out.
+
+#### Step 4: HOD Approves Request
+1. Enter HOD mobile: `9000000002`, OTP: `123456`.
+2. HOD Approvals dashboard opens showing the request.
+3. Tap the request card and click **Approve Request**.
+4. Status becomes **Approved**.
+5. Log out.
+
+#### Step 5: Student Views Hero QR Code
+1. Log in as Student (`9074121510`, OTP `123456`).
+2. The approved outpass now displays the dynamic rotating QR Code with animated countdown ring (refreshes every 15 seconds) and token string.
+3. Keep the token or click copy icon for guard check.
+4. Log out.
+
+#### Step 6: Security Guard Scans Exit & Entry
+1. Enter Guard mobile: `9000000090`, OTP: `123456`.
+2. Security Gate Console opens.
+3. Select **Exit Scan** -> Scan camera QR or paste token into fallback field -> Click **Verify Token**.
+4. Gate grants **ALLOW EXIT (Green)**. Pass status becomes **EXITED**.
+5. For return scan: select **Entry Scan** -> verify token after minimum dwell period -> Gate grants **ALLOW ENTRY (Green)**. Pass status becomes **RETURNED**.
+6. In Admin Console (**Monitor** tab), view the full status and gate events.
 
 ## 7. OTHER PROBLEMS FOUND & RANKED BY PRIORITY
 

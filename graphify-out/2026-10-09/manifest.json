@@ -324,10 +324,10 @@
     "semantic_hash": ""
   },
   "apps/mobile/lib/mock_backend.dart": {
-    "mtime": 1790504494.092515,
-    "seen": 1791561921.3203685,
-    "ast_hash": "4871844b0273f48fafb6f973a84606b3",
-    "semantic_hash": "4871844b0273f48fafb6f973a84606b3"
+    "mtime": 1791563144.4288442,
+    "seen": 1791563349.728506,
+    "ast_hash": "93ba312f047f2b170f4451ec5c388c9d",
+    "semantic_hash": ""
   },
   "apps/mobile/lib/qr_token.dart": {
     "mtime": 1791562877.4714847,
@@ -414,9 +414,9 @@
     "semantic_hash": "b09cfa7f70591d881bb4b9fee0a613a2"
   },
   "apps/mobile/test/mock_lifecycle_test.dart": {
-    "mtime": 1791562552.0514357,
-    "seen": 1791562593.4971657,
-    "ast_hash": "39f752f9ca794a9b80b7de66699c4c01",
+    "mtime": 1791563168.0306113,
+    "seen": 1791563349.7331777,
+    "ast_hash": "832f91a20d32a657da46d7a83e980e1e",
     "semantic_hash": ""
   },
   "apps/mobile/web/manifest.json": {
@@ -807,6 +807,12 @@
     "mtime": 1791562911.4830463,
     "seen": 1791562964.663269,
     "ast_hash": "acf806bd93ff4d68b77d6e53ce385b1b",
+    "semantic_hash": ""
+  },
+  "apps/mobile/test/mock_discrepancies_test.dart": {
+    "mtime": 1791563225.0848575,
+    "seen": 1791563349.7331777,
+    "ast_hash": "0af30608a395e195442a3d74432f7557",
     "semantic_hash": ""
   }
 }
