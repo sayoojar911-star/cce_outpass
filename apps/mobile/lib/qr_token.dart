@@ -55,6 +55,82 @@ class DeviceKeys {
     return '-----BEGIN PUBLIC KEY-----\n${lines.join('\n')}\n-----END PUBLIC KEY-----\n';
   }
 
+  /// PKCS#8 PEM of the private key for secure local persistence.
+  String privateKeyPkcs8Pem() {
+    final algId = ASN1Sequence()
+      ..add(ASN1ObjectIdentifier.fromComponentString('1.2.840.10045.2.1'))
+      ..add(ASN1ObjectIdentifier.fromComponentString('1.2.840.10045.3.1.7'));
+
+    // RFC 5915 ECPrivateKey: version(1), privateKey(OCTET STRING)
+    final privBytes = _bigIntTo32Bytes(_priv.d!);
+    final ecPrivKey = ASN1Sequence()
+      ..add(ASN1Integer(BigInt.one))
+      ..add(ASN1OctetString(privBytes))
+      ..add(ASN1BitString(_pub.Q!.getEncoded(false), tag: 0xA1));
+
+    // PKCS#8 OneAsymmetricKey: version(0), privateKeyAlgorithm, privateKey
+    final pkcs8 = ASN1Sequence()
+      ..add(ASN1Integer(BigInt.zero))
+      ..add(algId)
+      ..add(ASN1OctetString(ecPrivKey.encodedBytes));
+
+    final der = pkcs8.encodedBytes;
+    final b64 = base64.encode(der);
+    final lines = <String>[];
+    for (var i = 0; i < b64.length; i += 64) {
+      lines.add(b64.substring(i, min(i + 64, b64.length)));
+    }
+    return '-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----\n';
+  }
+
+  /// Restores a [DeviceKeys] instance from a stored PKCS#8 PEM.
+  static DeviceKeys fromPrivateKeyPem(String pem) {
+    final clean = pem
+        .replaceAll('-----BEGIN PRIVATE KEY-----', '')
+        .replaceAll('-----END PRIVATE KEY-----', '')
+        .replaceAll('\r', '')
+        .replaceAll('\n', '')
+        .trim();
+    final der = base64.decode(clean);
+    final p = ASN1Parser(der);
+    final topSeq = p.nextObject() as ASN1Sequence;
+    final privKeyOctet = topSeq.elements[2] as ASN1OctetString;
+
+    final innerParser = ASN1Parser(privKeyOctet.valueBytes());
+    final innerSeq = innerParser.nextObject() as ASN1Sequence;
+    final dOctets = innerSeq.elements[1] as ASN1OctetString;
+    final d = _bytesToBigInt(dOctets.valueBytes());
+
+    final domain = ECDomainParameters('prime256v1');
+    final q = domain.G * d;
+
+    final privKey = ECPrivateKey(d, domain);
+    final pubKey = ECPublicKey(q, domain);
+    return DeviceKeys(AsymmetricKeyPair<PublicKey, PrivateKey>(pubKey, privKey));
+  }
+
+  static Uint8List _bigIntTo32Bytes(BigInt number) {
+    var hex = number.toRadixString(16);
+    if (hex.length % 2 != 0) hex = '0$hex';
+    final bytes = <int>[];
+    for (var i = 0; i < hex.length; i += 2) {
+      bytes.add(int.parse(hex.substring(i, i + 2), radix: 16));
+    }
+    final result = Uint8List(32);
+    if (bytes.length > 32) {
+      result.setRange(0, 32, bytes.sublist(bytes.length - 32));
+    } else {
+      result.setRange(32 - bytes.length, 32, bytes);
+    }
+    return result;
+  }
+
+  static BigInt _bytesToBigInt(Uint8List bytes) {
+    var hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    if (hex.isEmpty) return BigInt.zero;
+    return BigInt.parse(hex, radix: 16);
+  }
+
   /// Current unix time rounded down to the token step.
   static int currentStep() =>
       (DateTime.now().millisecondsSinceEpoch ~/ 1000) ~/ kTokenStepSeconds *

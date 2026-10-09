@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'api_client.dart';
@@ -423,6 +424,20 @@ class _QrScreenState extends State<QrScreen> {
             ),
             const SizedBox(height: 16),
             const Text('Show this at the gate. Do not share or screenshot.'),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: token));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Token copied to clipboard! Paste in Guard "Manual entry".'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.copy, size: 18),
+              label: const Text('Copy Token for Guard'),
+            ),
           ],
         ),
       ),

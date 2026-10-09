@@ -10,6 +10,7 @@ export class OutpassController {
   constructor(private readonly outpass: OutpassService) {}
 
   @Post()
+  @Auth('STUDENT')
   create(@Req() req: any, @Body() dto: CreateOutpassDto) {
     return this.outpass.create(req.user, dto);
   }
@@ -29,6 +30,7 @@ export class OutpassController {
   }
 
   @Post(':id/cancel')
+  @Auth('STUDENT')
   cancel(@Req() req: any, @Param('id') id: string, @Body() dto: CancelDto) {
     return this.outpass.cancel(req.user, id, dto.reason);
   }
