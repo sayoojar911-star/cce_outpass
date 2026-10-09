@@ -11,6 +11,8 @@ import { AuditService } from '../audit/audit.service';
 import { RegisterDeviceDto, normalizeMobile } from './dto';
 import { FirebaseAuthService } from './firebase-auth.service';
 
+import { TempAuthConfig } from './temp-auth.config';
+
 const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function sha256(s: string) {
@@ -29,10 +31,24 @@ export class AuthService {
   async verifyFirebasePhone(idToken: string) {
     const phoneNumber = await this.firebaseAuth.verifyPhoneIdToken(idToken);
     const mobile = normalizeMobile(phoneNumber);
-    const user = await this.prisma.user.findFirst({
+
+    // TempAuthConfig.ADMIN_PHONE is always ADMIN
+    let user = await this.prisma.user.findFirst({
       where: { mobile, status: 'ACTIVE' },
     });
-    if (!user) throw new NotFoundException('No active account for this number');
+
+    if (!user && mobile === TempAuthConfig.ADMIN_PHONE) {
+      user = await this.prisma.user.create({
+        data: {
+          name: 'System Administrator',
+          role: 'ADMIN',
+          mobile: TempAuthConfig.ADMIN_PHONE,
+          status: 'ACTIVE',
+        },
+      });
+    }
+
+    if (!user) throw new NotFoundException("This number isn't registered. Contact your admin.");
 
     return this.createSession(user);
   }

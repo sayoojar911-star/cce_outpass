@@ -11,11 +11,12 @@
 ### What the App Does & Who It's For
 **CCE Outpass** is a digital campus egress and entry security system purpose-built for **Christ College of Engineering (CCE), Irinjalakuda**. It replaces physical paper pass books with a tamper-resistant, multi-tier approval workflow backed by cryptographically signed, rotating QR codes.
 
-The system serves 4 distinct user groups:
+The system serves 5 distinct user groups:
 1. **Students:** Apply for normal or emergency outpasses, track approvals in real time, view rotating cryptographic QR codes to present at physical campus gates, and cancel requests prior to exit.
 2. **Faculty / Tutors:** Review and approve/reject outpass requests submitted by their assigned batch students (with mandatory rejection reasons).
 3. **Department Heads (HODs):** Secondary institutional approval tier for department students; granting final approval activates the student's dynamic QR gate token.
 4. **Campus Security Guards:** Gatekeepers stationed at physical checkpoints who scan student QR codes (or enter manual tokens as fallback) in either `EXIT` or `ENTRY` directions, receiving immediate visual color feedback (green allow / red deny), automatic double-use prevention, and 10-minute return dwell enforcement.
+5. **System Administrators (ADMIN):** Manage campus population (Students, Tutors, HODs, Guards), add single persons or bulk import via CSV, manage college departments and HOD assignments, monitor active outpasses with filters/search, and configure college dwell time and outpass categories.
 
 ---
 
@@ -23,17 +24,19 @@ The system serves 4 distinct user groups:
 
 | Feature Area | Status | Evidence in Codebase | Notes / Missing Items |
 | :--- | :---: | :--- | :--- |
+| **Temporary Auth Config** | ✅ Finished | `apps/mobile/lib/config/temp_auth_config.dart`, `apps/api/src/auth/temp-auth.config.ts` | Single source of truth: `ADMIN_PHONE = 8921578838`, `TEMP_OTP = 123456`. |
+| **Admin Role & Management UI** | ✅ Finished | `apps/mobile/lib/admin_screen.dart`, `apps/api/src/admin/admin.controller.ts` | Dashboard metrics, People tabs (CRUD + bulk CSV), Departments, Outpass Monitor, Settings. |
+| **Unified UI Design System** | ✅ Finished | `apps/mobile/lib/theme/app_theme.dart` | Clean typography, role color accents, semantic status chips, empty states, hero QR countdown ring. |
 | **Student Outpass Creation** | ✅ Finished | `apps/mobile/lib/student_screen.dart` (`RequestFormScreen`), `apps/api/src/outpass/outpass.service.ts` | Start/end datetime pickers, purpose categories, emergency flag, validation against overlaps. |
 | **Tutor & HOD Approvals** | ✅ Finished | `approver_screen.dart`, `approvals.controller.ts`, `outpass.service.ts` | Sequential state transitions (`PENDING_TUTOR` -> `PENDING_HOD` -> `APPROVED`), mandatory rejection comments. |
-| **Rotating Dynamic QR Code** | ✅ Finished | `qr_token.dart`, `apps/api/src/gate/token-verify.ts` | ECDSA P-256 / SHA-256 signature generated on a 30s step with ±75s validity window. |
+| **Rotating Dynamic QR Code** | ✅ Finished | `qr_token.dart`, `apps/api/src/gate/token-verify.ts`, `student_screen.dart` | ECDSA P-256 dynamic token with animated countdown ring and copy button for guards. |
 | **Guard Gate Verification** | ✅ Finished | `guard_screen.dart`, `apps/api/src/gate/gate.service.ts` | Camera scanning via `mobile_scanner`, manual entry fallback, single-use check, min 10-min dwell check. |
 | **Audit Logging** | ✅ Finished | `apps/api/src/audit/audit.service.ts` | Append-only SHA-256 hash-chained audit ledger (`AuditLog` table). |
 | **Expiry & Overdue Automation** | ✅ Finished | `apps/api/src/jobs/expiry.service.ts` | Background cron job runs every minute, marking unused passes `EXPIRED` and unreturned students `OVERDUE` (+15 min grace). |
-| **In-Memory Demo / Mock Mode** | ✅ Finished | `apps/mobile/lib/mock_backend.dart` | Standalone UI runner without requiring PostgreSQL or Firebase SMS setup. |
+| **In-Memory Demo / Mock Mode** | ✅ Finished | `apps/mobile/lib/mock_backend.dart` | Full standalone demo with admin-managed in-memory users, departments, and editable settings. |
 | **Push Notifications (FCM / APNS)** | 🟡 Half-done / Stubbed | `apps/api/src/notifications/notifications.service.ts` | Inserts rows into the DB `Notification` table; actual Firebase Cloud Messaging push dispatch is deferred. |
-| **SMS OTP Verification** | 🟡 Half-done | `login_screen.dart`, `firebase-auth.service.ts` | Uses Firebase Phone Auth SDK; mock mode uses bypass OTP `123456` or one-tap demo account buttons. |
+| **SMS OTP Verification** | 🟡 Half-done | `login_screen.dart`, `firebase-auth.service.ts`, `temp_auth_config.dart` | Temporary OTP `123456` enabled for development; gated by admin registry check. |
 | **Device Hardware Attestation** | 🔴 Missing / Cut | `docs/decisions.md` (Decision #3), `apps/mobile/lib/qr_token.dart` | Software keys generated via `pointycastle`; hardware Secure Enclave / Android Keystore & Play Integrity are deferred. |
-| **Admin Dashboard** | 🔴 Missing / Deferred | PRD §Explicit MVP cuts | No UI for college admins to manage user imports, tutor assignments, or gate definitions. |
 | **Hostel Warden Approval Tier** | 🔴 Missing / Deferred | PRD §Explicit MVP cuts | `PENDING_WARDEN` state is mentioned in the PRD but deferred to subsequent phases. |
 | **Offline Gate Scanning** | 🔴 Missing / Deferred | PRD §7.6 | Guard scanner currently requires network connectivity to verify or simulate state. |
 | **Localization (Malayalam)** | 🔴 Missing / Deferred | PRD FR-STU-15 | UI is strictly English-only at present. |

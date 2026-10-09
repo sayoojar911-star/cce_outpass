@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { OutpassModule } from './outpass/outpass.module';
 import { GateModule } from './gate/gate.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { AdminModule } from './admin/admin.module';
 import { ExpiryService } from './jobs/expiry.service';
 
 @Module({
@@ -37,6 +38,7 @@ import { ExpiryService } from './jobs/expiry.service';
     OutpassModule,
     GateModule,
     NotificationsModule,
+    AdminModule,
   ],
   providers: [PrismaService, ExpiryService],
 })

@@ -190,3 +190,19 @@ model Notification {
 
   @@index([userId, createdAt])
 }
+
+model Department {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  hodId     String?
+  createdAt DateTime @default(now())
+}
+
+model AppSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
