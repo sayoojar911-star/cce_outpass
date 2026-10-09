@@ -7,40 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'api_client.dart';
 import 'app_state.dart';
 import 'qr_token.dart';
-
-const _statusLabels = {
-  'PENDING_TUTOR': 'Pending — Tutor',
-  'PENDING_HOD': 'Pending — HOD',
-  'APPROVED': 'Approved — show QR',
-  'EXITED': 'Out of campus',
-  'RETURNED': 'Returned',
-  'REJECTED': 'Rejected',
-  'CANCELLED': 'Cancelled',
-  'EXPIRED': 'Expired',
-  'OVERDUE': 'Overdue — return now',
-};
-
-Color _statusColor(String status) {
-  switch (status) {
-    case 'APPROVED':
-      return Colors.green;
-    case 'EXITED':
-      return Colors.blue;
-    case 'OVERDUE':
-      return Colors.deepOrange;
-    case 'REJECTED':
-    case 'CANCELLED':
-    case 'EXPIRED':
-      return Colors.red;
-    case 'PENDING_TUTOR':
-    case 'PENDING_HOD':
-      return Colors.orange;
-    case 'RETURNED':
-      return Colors.teal;
-    default:
-      return Colors.grey;
-  }
-}
+import 'theme/app_theme.dart';
 
 class StudentHome extends StatefulWidget {
   const StudentHome({super.key});
@@ -50,6 +17,7 @@ class StudentHome extends StatefulWidget {
 }
 
 class _StudentHomeState extends State<StudentHome> {
+  int _tabIndex = 0;
   List<dynamic> _outpasses = [];
   bool _loading = true;
   String? _error;
@@ -61,8 +29,6 @@ class _StudentHomeState extends State<StudentHome> {
   void initState() {
     super.initState();
     _refresh();
-    // Real-time-ish: poll for status changes (approvals, QR ready) while the
-    // screen is open. Push notifications are the later phase (PRD §6.10).
     _poll = Timer.periodic(const Duration(seconds: 4), (_) => _refresh(silent: true));
   }
 
@@ -79,164 +45,292 @@ class _StudentHomeState extends State<StudentHome> {
       if (!mounted) return;
       setState(() { _outpasses = rows; _loading = false; _error = null; });
     } catch (e) {
-      if (!mounted || silent) return; // keep old data on background failures
+      if (!mounted || silent) return;
       setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
-  Map<String, dynamic>? get _active {
-    const activeStatuses = ['PENDING_TUTOR', 'PENDING_HOD', 'APPROVED', 'EXITED', 'OVERDUE'];
+  Map<String, dynamic>? get _activeOutpass {
     for (final o in _outpasses) {
-      if (activeStatuses.contains(o['status'])) return (o as Map).cast<String, dynamic>();
+      final s = o['status'] as String?;
+      if (s == 'PENDING_TUTOR' ||
+          s == 'PENDING_HOD' ||
+          s == 'APPROVED' ||
+          s == 'EXITED' ||
+          s == 'OVERDUE') {
+        return o as Map<String, dynamic>;
+      }
     }
     return null;
   }
 
-  Future<void> _openRequestForm() async {
-    final created = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const RequestFormScreen()),
-    );
-    if (created == true) _refresh();
+  void _openRequestForm() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const RequestFormScreen()))
+        .then((_) => _refresh());
   }
 
   @override
   Widget build(BuildContext context) {
-    final active = _active;
+    final active = _activeOutpass;
+    final past = _outpasses.where((o) => o != active).toList();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CCE Outpass'),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppTheme.studentAccent.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.school, color: AppTheme.studentAccent, size: 22),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_state.userName ?? 'Student Portal',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const Text('CCE Outpass · Student',
+                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+              ],
+            ),
+          ],
+        ),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _refresh),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => _state.logout(),
+          IconButton(icon: const Icon(Icons.refresh), tooltip: 'Refresh', onPressed: _refresh),
+          IconButton(icon: const Icon(Icons.logout), tooltip: 'Sign out', onPressed: () => _state.logout()),
+        ],
+      ),
+      body: _loading && _outpasses.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : _tabIndex == 0
+              ? _buildCurrentPassView(active)
+              : _buildHistoryView(past),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tabIndex,
+        onDestinationSelected: (i) => setState(() => _tabIndex = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.confirmation_number_outlined),
+            selectedIcon: Icon(Icons.confirmation_number),
+            label: 'Current Pass',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'History',
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
+      floatingActionButton: active == null
+          ? FloatingActionButton.extended(
+              backgroundColor: AppTheme.studentAccent,
+              foregroundColor: Colors.white,
+              onPressed: _openRequestForm,
+              label: const Text('Request Outpass'),
+              icon: const Icon(Icons.add),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildCurrentPassView(Map<String, dynamic>? active) {
+    if (active == null) {
+      return EmptyState(
+        icon: Icons.badge_outlined,
+        title: 'No active outpass',
+        subtitle: 'Need to step out of campus? Create an outpass request below.',
+        action: FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: AppTheme.studentAccent),
+          onPressed: _openRequestForm,
+          icon: const Icon(Icons.add),
+          label: const Text('Request New Outpass'),
+        ),
+      );
+    }
+
+    final status = active['status'] as String;
+    final canShowQr = status == 'APPROVED' || status == 'EXITED' || status == 'OVERDUE';
+
+    return SingleChildScrollView(
+      padding: AppTheme.screenPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+              side: BorderSide(
+                color: canShowQr ? AppTheme.studentAccent : AppTheme.borderLight,
+                width: canShowQr ? 2 : 1,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (_error != null)
-                    Card(
-                      color: Colors.red.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text('Error: $_error'),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(active['displayId'] ?? '',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      StatusChip(status: status),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.studentAccent.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.place_outlined, color: AppTheme.studentAccent, size: 24),
                       ),
-                    ),
-                  if (active != null) _ActiveCard(outpass: active, onChanged: _refresh)
-                  else
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(children: [
-                          const Text('No active outpass'),
-                          const SizedBox(height: 12),
-                          FilledButton.icon(
-                            onPressed: _openRequestForm,
-                            icon: const Icon(Icons.exit_to_app),
-                            label: const Text('Request outpass'),
-                          ),
-                        ]),
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  Text('History', style: Theme.of(context).textTheme.titleMedium),
-                  ..._outpasses.map((o) {
-                    final m = (o as Map).cast<String, dynamic>();
-                    return Card(
-                      child: ListTile(
-                        title: Text('${m['displayId']} · ${m['destination']}'),
-                        subtitle: Text(
-                            '${(m['requestedExitAt'] as String).substring(0, 16).replaceAll("T", " ")}'
-                            ' → ${(m['expectedReturnAt'] as String).substring(11, 16)}'),
-                        trailing: Chip(
-                          label: Text(_statusLabels[m['status']] ?? m['status'],
-                              style: const TextStyle(color: Colors.white, fontSize: 11)),
-                          backgroundColor: _statusColor(m['status'] as String),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(active['destination'] ?? 'Destination',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            Text('${active['purposeCategory']} — ${active['type'] ?? 'NORMAL'}',
+                                style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+                          ],
                         ),
                       ),
-                    );
-                  }),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceBg,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _infoCol('Requested Exit', active['requestedExitAt']),
+                        _infoCol('Expected Return', active['expectedReturnAt']),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  if (canShowQr) ...[
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.studentAccent,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      onPressed: () => Navigator.of(context)
+                          .push(MaterialPageRoute(
+                              builder: (_) => QrScreen(outpassId: active['id'] as String)))
+                          .then((_) => _refresh()),
+                      icon: const Icon(Icons.qr_code_2, size: 24),
+                      label: const Text('Open Gate QR Pass', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.statusPendingBg,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.hourglass_top, color: AppTheme.statusPendingText, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              status == 'PENDING_TUTOR'
+                                  ? 'Awaiting tutor approval'
+                                  : 'Tutor approved! Awaiting HOD confirmation.',
+                              style: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.statusPendingText),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  if (status == 'APPROVED' || status.startsWith('PENDING')) ...[
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                      onPressed: () async {
+                        try {
+                          await _state.api.cancelOutpass(active['id'] as String);
+                          _refresh();
+                        } catch (e) {
+                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                        }
+                      },
+                      icon: const Icon(Icons.cancel_outlined, size: 18),
+                      label: const Text('Cancel Outpass Request'),
+                    ),
+                  ],
                 ],
               ),
             ),
-      floatingActionButton: active == null
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _openRequestForm,
-              label: const Text('New request'),
-              icon: const Icon(Icons.add),
-            ),
-    );
-  }
-}
-
-class _ActiveCard extends StatelessWidget {
-  const _ActiveCard({required this.outpass, required this.onChanged});
-
-  final Map<String, dynamic> outpass;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final status = outpass['status'] as String;
-    final canShowQr = status == 'APPROVED' || status == 'EXITED' || status == 'OVERDUE';
-    return Card(
-      color: canShowQr ? Colors.green.shade50 : Colors.orange.shade50,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(_statusLabels[status] ?? status,
-                style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 4),
-            Text('${outpass['destination']} · ${outpass['displayId']}'),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: canShowQr
-                      ? () => Navigator.of(context)
-                          .push(MaterialPageRoute(
-                              builder: (_) => QrScreen(outpassId: outpass['id'] as String)))
-                          .then((_) => onChanged())
-                      : null,
-                  icon: const Icon(Icons.qr_code_2),
-                  label: const Text('Show QR'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (status == 'APPROVED' || status.startsWith('PENDING'))
-                TextButton.icon(
-                  onPressed: () async {
-                    final api = AppStateScope.of(context).api;
-                    try {
-                      await api.cancelOutpass(outpass['id'] as String);
-                      onChanged();
-                    } on ApiException catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(SnackBar(content: Text(e.message)));
-                      }
-                    }
-                  },
-                  icon: const Icon(Icons.close),
-                  label: const Text('Cancel'),
-                ),
-            ]),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+
+  Widget _infoCol(String label, dynamic dateStr) {
+    String text = '-';
+    if (dateStr != null) {
+      try {
+        final d = DateTime.parse(dateStr).toLocal();
+        text = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')} (${d.day}/${d.month})';
+      } catch (_) {}
+    }
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+        const SizedBox(height: 4),
+        Text(text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+      ],
+    );
+  }
+
+  Widget _buildHistoryView(List<dynamic> past) {
+    if (past.isEmpty) {
+      return const EmptyState(
+        icon: Icons.history,
+        title: 'No past outpasses',
+        subtitle: 'Completed, expired, or cancelled passes will appear here.',
+      );
+    }
+
+    return ListView.separated(
+      padding: AppTheme.screenPadding,
+      itemCount: past.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (ctx, i) {
+        final o = past[i];
+        return Card(
+          child: ListTile(
+            title: Text('${o['destination']} (${o['displayId']})',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            subtitle: Text('${o['purposeCategory']} · ${o['requestedExitAt']?.substring(0, 10) ?? ''}',
+                style: const TextStyle(fontSize: 12)),
+            trailing: StatusChip(status: o['status'] ?? 'CANCELLED'),
+          ),
+        );
+      },
+    );
+  }
 }
 
+// Request Form Dialog
 class RequestFormScreen extends StatefulWidget {
   const RequestFormScreen({super.key});
 
@@ -248,129 +342,136 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
   final _destination = TextEditingController();
   final _purposeText = TextEditingController();
   String _purposeCategory = 'Medical';
-  bool _emergency = false;
-  DateTime _exit = DateTime.now().add(const Duration(minutes: 30));
+  String _type = 'NORMAL';
+  DateTime _exit = DateTime.now().add(const Duration(minutes: 15));
   DateTime _ret = DateTime.now().add(const Duration(hours: 3));
   bool _busy = false;
   String? _error;
 
-  static const _categories = [
-    'Medical', 'Family', 'Official', 'Home visit', 'Other',
-  ];
+  AppState get _state => AppStateScope.of(context);
+
+  Future<void> _submit() async {
+    setState(() { _busy = true; _error = null; });
+    try {
+      await _state.api.createOutpass(
+        requestedExitAt: _exit.toIso8601String(),
+        expectedReturnAt: _ret.toIso8601String(),
+        destination: _destination.text.trim(),
+        purposeCategory: _purposeCategory,
+        purposeText: _purposeText.text.trim().isEmpty ? null : _purposeText.text.trim(),
+        type: _type,
+      );
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _pick(DateTime initial, bool isExit) async {
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 7)),
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 30)),
     );
     if (date == null || !mounted) return;
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initial),
     );
-    if (time == null || !mounted) return;
-    final value = DateTime(date.year, date.month, date.day, time.hour, time.minute);
-    setState(() => isExit ? _exit = value : _ret = value);
-  }
-
-  String _fmt(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}'
-      'T${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}:00';
-
-  Future<void> _submit() async {
-    setState(() { _busy = true; _error = null; });
-    try {
-      await AppStateScope.of(context).api.createOutpass(
-            requestedExitAt: _fmt(_exit),
-            expectedReturnAt: _fmt(_ret),
-            destination: _destination.text.trim(),
-            purposeCategory: _purposeCategory,
-            purposeText: _purposeText.text.trim().isEmpty ? null : _purposeText.text.trim(),
-            type: _emergency ? 'EMERGENCY' : 'NORMAL',
-          );
-      if (mounted) Navigator.of(context).pop(true);
-    } on ApiException catch (e) {
-      setState(() => _error = e.message);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    if (time == null) return;
+    final combined = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    setState(() {
+      if (isExit) {
+        _exit = combined;
+        if (_ret.isBefore(_exit)) _ret = _exit.add(const Duration(hours: 2));
+      } else {
+        _ret = combined;
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final valid = _destination.text.trim().isNotEmpty && _ret.isAfter(_exit);
     return Scaffold(
-      appBar: AppBar(title: const Text('Request outpass')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: false, label: Text('Normal')),
-              ButtonSegment(value: true, label: Text('Emergency')),
-            ],
-            selected: {_emergency},
-            onSelectionChanged: (s) => setState(() => _emergency = s.first),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _destination,
-            decoration: const InputDecoration(
-                labelText: 'Destination', border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _purposeCategory,
-            decoration:
-                const InputDecoration(labelText: 'Purpose', border: OutlineInputBorder()),
-            items: _categories
-                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                .toList(),
-            onChanged: (v) => setState(() => _purposeCategory = v!),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _purposeText,
-            decoration: const InputDecoration(
-                labelText: 'Details (optional)', border: OutlineInputBorder()),
-            maxLines: 2,
-          ),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => _pick(_exit, true),
-                child: Text('Exit: ${_fmt(_exit).substring(5, 16).replaceAll("T", " ")}'),
+      appBar: AppBar(title: const Text('Request Outpass')),
+      body: SingleChildScrollView(
+        padding: AppTheme.screenPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _destination,
+              decoration: const InputDecoration(labelText: 'Destination (e.g. Irinjalakuda Market)'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _purposeCategory,
+              decoration: const InputDecoration(labelText: 'Purpose Category'),
+              items: const [
+                DropdownMenuItem(value: 'Medical', child: Text('Medical')),
+                DropdownMenuItem(value: 'Personal', child: Text('Personal')),
+                DropdownMenuItem(value: 'Official', child: Text('Official')),
+                DropdownMenuItem(value: 'Academic', child: Text('Academic')),
+                DropdownMenuItem(value: 'Emergency', child: Text('Emergency')),
+              ],
+              onChanged: (v) => setState(() => _purposeCategory = v!),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _type,
+              decoration: const InputDecoration(labelText: 'Outpass Type'),
+              items: const [
+                DropdownMenuItem(value: 'NORMAL', child: Text('Normal (Tutor → HOD)')),
+                DropdownMenuItem(value: 'EMERGENCY', child: Text('Emergency (Concurrent alerts)')),
+              ],
+              onChanged: (v) => setState(() => _type = v!),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _purposeText,
+              decoration: const InputDecoration(labelText: 'Additional Details (optional)'),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _pick(_exit, true),
+                    child: Text('Exit: ${_exit.hour.toString().padLeft(2, '0')}:${_exit.minute.toString().padLeft(2, '0')}'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _pick(_ret, false),
+                    child: Text('Return: ${_ret.hour.toString().padLeft(2, '0')}:${_ret.minute.toString().padLeft(2, '0')}'),
+                  ),
+                ),
+              ],
+            ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(_error!, style: const TextStyle(color: Colors.red)),
               ),
+            const SizedBox(height: 24),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppTheme.studentAccent),
+              onPressed: _busy || _destination.text.trim().isEmpty ? null : _submit,
+              child: Text(_busy ? 'Submitting…' : 'Submit for Approval'),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => _pick(_ret, false),
-                child: Text('Return: ${_fmt(_ret).substring(5, 16).replaceAll("T", " ")}'),
-              ),
-            ),
-          ]),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(_error!, style: const TextStyle(color: Colors.red)),
-            ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: (_busy || !valid) ? null : _submit,
-            child: Text(_busy ? 'Submitting…' : 'Submit for approval'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Rotating QR screen (FR-STU-08/09, PRD §7.3): token re-signed every 30 s;
-/// a screenshot dies within the server's 75 s acceptance window.
+/// HERO QR VIEW
 class QrScreen extends StatefulWidget {
   const QrScreen({super.key, required this.outpassId});
 
@@ -403,42 +504,109 @@ class _QrScreenState extends State<QrScreen> {
   Widget build(BuildContext context) {
     final keys = AppStateScope.of(context).deviceKeys!;
     final token = keys.buildToken(widget.outpassId, _step);
-    final secsLeft = _step + 30 - DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final secsLeft = (_step + 30) - nowSec;
+    final progress = (secsLeft.clamp(0, 30) / 30.0);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Gate pass')),
+      backgroundColor: AppTheme.surfaceBg,
+      appBar: AppBar(
+        title: const Text('Official Gate Pass QR'),
+        centerTitle: true,
+      ),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(children: [
-                  QrImageView(data: token, size: 260),
-                  const SizedBox(height: 16),
-                  Text('Refreshes in ${secsLeft}s',
-                      style: Theme.of(context).textTheme.bodySmall),
-                ]),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text('Show this at the gate. Do not share or screenshot.'),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: token));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Token copied to clipboard! Paste in Guard "Manual entry".'),
-                    duration: Duration(seconds: 2),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 380),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Hero QR Card
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                    side: const BorderSide(color: AppTheme.borderLight),
                   ),
-                );
-              },
-              icon: const Icon(Icons.copy, size: 18),
-              label: const Text('Copy Token for Guard'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      children: [
+                        // Countdown Ring above QR
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            SizedBox(
+                              width: 54,
+                              height: 54,
+                              child: CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: 5,
+                                backgroundColor: AppTheme.borderLight,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  secsLeft > 5 ? AppTheme.studentAccent : Colors.red,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '${secsLeft}s',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: secsLeft > 5 ? AppTheme.textDark : Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                            border: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          child: QrImageView(
+                            data: token,
+                            size: 240,
+                            version: QrVersions.auto,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        const StatusChip(status: 'APPROVED'),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Scan at Security Gate',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Rotating ECDSA dynamic token re-keys every 30 seconds to prevent screenshots.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: token));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Token copied to clipboard for Guard manual entry.'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.copy, size: 16),
+                  label: const Text('Copy Token for Guard Manual Entry'),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

@@ -5,9 +5,9 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'api_client.dart';
 import 'app_state.dart';
+import 'theme/app_theme.dart';
 
-/// Guard gate screen (FR-SEC-01..07): gate + direction selection, camera scan,
-/// big green/red result, scan history. Offline mode is a later phase (PRD §7.6).
+/// Refreshed Guard gate screen using AppTheme, warm orange accents, and clean status views.
 class GuardHome extends StatefulWidget {
   const GuardHome({super.key});
 
@@ -31,13 +31,13 @@ class _GuardHomeState extends State<GuardHome> {
   void initState() {
     super.initState();
     _startShiftAndLoad();
-    // Keep the shift log current even between scans.
     _poll = Timer.periodic(const Duration(seconds: 6), (_) => _loadHistory());
   }
 
   @override
   void dispose() {
     _poll?.cancel();
+    _gateId.dispose();
     super.dispose();
   }
 
@@ -45,7 +45,7 @@ class _GuardHomeState extends State<GuardHome> {
     try {
       await _state.api.startShift(_gateId.text.trim());
     } on ApiException {
-      // Shift record is bookkeeping; scanning still works.
+      // Shift record is bookkeeping
     }
     await _loadHistory();
   }
@@ -84,161 +84,226 @@ class _GuardHomeState extends State<GuardHome> {
         context: context,
         barrierDismissible: false,
         builder: (_) => AlertDialog(
-          backgroundColor: ok ? Colors.green.shade700 : Colors.red.shade700,
-          title: Text(
-            ok
-                ? (_dir == _Dir.exit ? '🟢 OUTPASS APPROVED' : '🟢 RETURN RECORDED')
-                : '🔴 NOT APPROVED',
-            style: const TextStyle(color: Colors.white),
+          backgroundColor: ok ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(ok ? Icons.check_circle : Icons.cancel, color: Colors.white, size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  ok
+                      ? (_dir == _Dir.exit ? 'OUTPASS APPROVED' : 'RETURN RECORDED')
+                      : 'SCAN REJECTED',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(result['result'] as String,
-                  style: const TextStyle(color: Colors.white, fontSize: 18)),
+              Text(
+                'Result: ${result['result']}',
+                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+              ),
               if (o != null) ...[
-                const SizedBox(height: 8),
-                Text('${o['displayId']}',
-                    style: const TextStyle(color: Colors.white70)),
-              ],
-              if (s != null) ...[
-                Text('${s['name']} · ${s['registerNo']}',
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold)),
-                if (o != null && o['destination'] != null)
-                  Text('To: ${o['destination']}',
-                      style: const TextStyle(color: Colors.white70)),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Pass: ${o['displayId']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      if (s != null) ...[
+                        const SizedBox(height: 4),
+                        Text('Student: ${s['name']}', style: const TextStyle(color: Colors.white)),
+                        Text('Roll No: ${s['registerNo']}', style: const TextStyle(color: Colors.white)),
+                        Text('Dept: ${s['department']}', style: const TextStyle(color: Colors.white)),
+                      ],
+                      const SizedBox(height: 4),
+                      Text('Destination: ${o['destination']}', style: const TextStyle(color: Colors.white)),
+                    ],
+                  ),
+                ),
               ],
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK', style: TextStyle(color: Colors.white)),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black87),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Dismiss'),
             ),
           ],
         ),
       );
+      await _loadHistory();
     }
-    _startShiftAndLoad();
+  }
+
+  void _manualTokenEntry() {
+    final controller = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Manual Token Entry'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Paste v1.<outpassId>.<step>.<sig>',
+            labelText: 'Raw QR Token String',
+          ),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              final text = controller.text.trim();
+              if (text.isNotEmpty) _submitScan(text);
+            },
+            child: const Text('Verify & Submit'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gate — Security'),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppTheme.guardAccent.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.security, color: AppTheme.guardAccent, size: 22),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Security Gate', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(_state.userName ?? 'Gate Officer', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+              ],
+            ),
+          ],
+        ),
         actions: [
-          IconButton(icon: const Icon(Icons.logout), onPressed: () => _state.logout()),
+          IconButton(icon: const Icon(Icons.refresh), tooltip: 'Refresh', onPressed: _loadHistory),
+          IconButton(icon: const Icon(Icons.logout), tooltip: 'Sign out', onPressed: () => _state.logout()),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _gateId,
-                  decoration: const InputDecoration(labelText: 'Gate ID'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              SegmentedButton<_Dir>(
-                segments: const [
-                  ButtonSegment(value: _Dir.exit, label: Text('EXIT')),
-                  ButtonSegment(value: _Dir.entry, label: Text('ENTRY')),
-                ],
-                selected: {_dir},
-                onSelectionChanged: (s) => setState(() => _dir = s.first),
-              ),
-            ]),
-          ),
-          if (_cameraOn)
-            Expanded(
-              child: Stack(children: [
-                MobileScanner(
-                  onDetect: _onDetect,
-                  controller: MobileScannerController(
-                    detectionSpeed: DetectionSpeed.normal,
-                  ),
-                ),
-                if (_submitting)
-                  const ColoredBox(
-                    color: Colors.black54,
-                    child: Center(child: CircularProgressIndicator(color: Colors.white)),
-                  ),
-              ]),
-            )
-          else
-            Expanded(
-              child: Center(
+      body: SingleChildScrollView(
+        padding: AppTheme.screenPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Direction Selector Card
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 40, vertical: 20),
-                        textStyle: const TextStyle(fontSize: 22),
-                      ),
-                      onPressed: () => setState(() => _cameraOn = true),
-                      icon: const Icon(Icons.qr_code_scanner, size: 32),
-                      label: const Text('SCAN QR'),
-                    ),
+                    const Text('Gate Operation', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 12),
-                    OutlinedButton(
-                      onPressed: () {
-                        final ctrl = TextEditingController();
-                        showDialog<void>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Manual token entry'),
-                            content: TextField(
-                              controller: ctrl,
-                              decoration: const InputDecoration(
-                                  hintText: 'v1.<id>.<ts>.<sig>'),
+                    SegmentedButton<_Dir>(
+                      segments: const [
+                        ButtonSegment(
+                          value: _Dir.exit,
+                          label: Text('STUDENT EXIT'),
+                          icon: Icon(Icons.logout),
+                        ),
+                        ButtonSegment(
+                          value: _Dir.entry,
+                          label: Text('CAMPUS RETURN'),
+                          icon: Icon(Icons.login),
+                        ),
+                      ],
+                      selected: {_dir},
+                      onSelectionChanged: (s) => setState(() => _dir = s.first),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppTheme.guardAccent,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
-                            actions: [
-                              TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: const Text('Cancel')),
-                              FilledButton(
-                                onPressed: () {
-                                  Navigator.pop(ctx);
-                                  _submitScan(ctrl.text.trim());
-                                },
-                                child: const Text('Submit'),
-                              ),
-                            ],
+                            onPressed: () => setState(() => _cameraOn = !_cameraOn),
+                            icon: Icon(_cameraOn ? Icons.videocam_off : Icons.qr_code_scanner),
+                            label: Text(_cameraOn ? 'Close Camera' : 'Scan Student QR'),
                           ),
-                        );
-                      },
-                      child: const Text('Manual entry'),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: _manualTokenEntry,
+                          icon: const Icon(Icons.keyboard_alt_outlined),
+                          label: const Text('Manual Entry'),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
-          if (_history.isNotEmpty)
-            SizedBox(
-              height: 150,
-              child: ListView(
-                children: _history.take(6).map((e) {
-                  final ev = (e as Map).cast<String, dynamic>();
-                  final ok = (ev['resultCode'] as String).startsWith('OK_');
-                  return ListTile(
-                    dense: true,
-                    leading: Icon(ok ? Icons.check_circle : Icons.cancel,
-                        color: ok ? Colors.green : Colors.red),
-                    title: Text('${ev['direction']} · ${ev['resultCode']}'),
-                    subtitle: Text('${ev['scannedAt']}'.substring(0, 19)),
-                  );
-                }).toList(),
+            if (_cameraOn) ...[
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: SizedBox(
+                  height: 300,
+                  child: MobileScanner(onDetect: _onDetect),
+                ),
               ),
-            ),
-        ],
+            ],
+            const SizedBox(height: 20),
+            // History Section
+            const Text('Recent Gate Scans', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const SizedBox(height: 8),
+            if (_history.isEmpty)
+              const EmptyState(
+                icon: Icons.history,
+                title: 'No scans this shift',
+                subtitle: 'Validated exits and returns will be listed here.',
+              )
+            else
+              ..._history.take(10).map((h) {
+                final isOk = (h['resultCode'] as String? ?? '').startsWith('OK_');
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: isOk ? Colors.green.shade100 : Colors.red.shade100,
+                      child: Icon(
+                        isOk ? Icons.check : Icons.close,
+                        color: isOk ? Colors.green.shade800 : Colors.red.shade800,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text('${h['direction'] ?? ''} — ${h['resultCode'] ?? ''}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: Text('Scanned at: ${h['scannedAt']?.toString().substring(11, 19) ?? ''}',
+                        style: const TextStyle(fontSize: 12)),
+                  ),
+                );
+              }),
+          ],
+        ),
       ),
     );
   }
