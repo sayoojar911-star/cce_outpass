@@ -7,6 +7,8 @@ import 'guard_screen.dart';
 import 'login_screen.dart';
 import 'student_screen.dart';
 
+import 'theme/app_theme.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   const apiKey = String.fromEnvironment('FIREBASE_API_KEY');
@@ -35,7 +37,7 @@ class CceOutpassApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'CCE Outpass',
-      theme: ThemeData(colorSchemeSeed: const Color(0xFF1B5E20), useMaterial3: true),
+      theme: AppTheme.lightTheme,
       home: AppStateScope(state: AppState(), child: const RootRouter()),
     );
   }
