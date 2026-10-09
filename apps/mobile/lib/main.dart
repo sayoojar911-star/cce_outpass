@@ -2,11 +2,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'app_state.dart';
+import 'admin_screen.dart';
 import 'approver_screen.dart';
 import 'guard_screen.dart';
 import 'login_screen.dart';
 import 'student_screen.dart';
-
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -64,6 +64,9 @@ class RootRouter extends StatelessWidget {
       case 'GUARD':
         screen = const GuardHome();
         break;
+      case 'ADMIN':
+        screen = const AdminHome();
+        break;
       default:
         screen = Scaffold(
           body: Center(child: Text('Role ${state.userRole} has no UI in this MVP')),
@@ -117,6 +120,10 @@ class _DemoRoleSwitcherButton extends StatelessWidget {
         icon = '🛡️';
         color = Colors.blueGrey;
         break;
+      case 'ADMIN':
+        icon = '⚡';
+        color = AppTheme.adminAccent;
+        break;
       default:
         icon = '👤';
         color = Colors.grey;
@@ -158,6 +165,10 @@ class _DemoRoleSwitcherButton extends StatelessWidget {
           const PopupMenuItem(
             value: '9000000090',
             child: Text('🛡️ Guard — Suresh (Security)'),
+          ),
+          const PopupMenuItem(
+            value: '8921578838',
+            child: Text('⚡ Admin — System Administrator'),
           ),
           const PopupMenuDivider(),
           const PopupMenuItem(

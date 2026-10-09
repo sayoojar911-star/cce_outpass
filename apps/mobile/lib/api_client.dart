@@ -181,6 +181,73 @@ class ApiClient {
     }))
         .cast<String, dynamic>();
   }
+
+  // ---- Admin APIs ----
+
+  Future<List<dynamic>> adminGetUsers() async {
+    if (isDemoMode) return MockBackend.instance.getAllUsers();
+    return (await get('/admin/users') as List).cast<dynamic>();
+  }
+
+  Future<Map<String, dynamic>> adminAddUser(Map<String, dynamic> data) async {
+    if (isDemoMode) return MockBackend.instance.addUser(data);
+    return (await post('/admin/users', body: data) as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> adminUpdateUser(String id, Map<String, dynamic> data) async {
+    if (isDemoMode) return MockBackend.instance.updateUser(id, data);
+    return (await post('/admin/users/$id', body: data) as Map).cast<String, dynamic>();
+  }
+
+  Future<void> adminDeleteUser(String id) async {
+    if (isDemoMode) {
+      MockBackend.instance.deleteUser(id);
+      return;
+    }
+    await post('/admin/users/$id/delete');
+  }
+
+  Future<int> adminBulkAddUsers(List<Map<String, String>> rows) async {
+    if (isDemoMode) return MockBackend.instance.bulkAddUsers(rows);
+    final res = await post('/admin/users/bulk', body: {'rows': rows});
+    return res['count'] as int;
+  }
+
+  Future<List<dynamic>> adminGetDepartments() async {
+    if (isDemoMode) return MockBackend.instance.getDepartments();
+    return (await get('/admin/departments') as List).cast<dynamic>();
+  }
+
+  Future<Map<String, dynamic>> adminAddOrUpdateDepartment(String code, String name, String? hodId) async {
+    if (isDemoMode) return MockBackend.instance.addOrUpdateDepartment(code, name, hodId);
+    return (await post('/admin/departments', body: {'code': code, 'name': name, 'hodId': hodId}) as Map).cast<String, dynamic>();
+  }
+
+  Future<List<dynamic>> adminGetOutpasses() async {
+    if (isDemoMode) return MockBackend.instance.getAllOutpasses();
+    return (await get('/admin/outpasses') as List).cast<dynamic>();
+  }
+
+  Future<Map<String, dynamic>> adminGetSettings() async {
+    if (isDemoMode) return MockBackend.instance.getSettings();
+    return (await get('/admin/settings') as Map).cast<String, dynamic>();
+  }
+
+  Future<void> adminUpdateSettings({String? collegeName, int? minDwellMinutes, List<String>? categories}) async {
+    if (isDemoMode) {
+      MockBackend.instance.updateSettings(
+        collegeName: collegeName,
+        minDwellMinutes: minDwellMinutes,
+        categories: categories,
+      );
+      return;
+    }
+    await post('/admin/settings', body: {
+      if (collegeName != null) 'collegeName': collegeName,
+      if (minDwellMinutes != null) 'minDwellMinutes': minDwellMinutes,
+      if (categories != null) 'categories': categories,
+    });
+  }
 }
 
 class ApiException implements Exception {

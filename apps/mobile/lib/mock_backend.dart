@@ -18,6 +18,12 @@ class MockBackend {
   final List<Map<String, dynamic>> _outpasses = [];
   final List<Map<String, dynamic>> _gateEvents = [];
   final List<Map<String, dynamic>> _notifications = [];
+  final List<Map<String, dynamic>> _departments = [];
+  final Map<String, dynamic> _settings = {
+    'collegeName': 'Christ College of Engineering, Irinjalakuda',
+    'minDwellMinutes': 10,
+    'categories': ['Medical', 'Personal', 'Official', 'Academic', 'Emergency'],
+  };
   int _outpassCounter = 100;
 
   void resetForTesting() {
@@ -27,6 +33,10 @@ class MockBackend {
     _outpasses.clear();
     _gateEvents.clear();
     _notifications.clear();
+    _departments.clear();
+    _settings['collegeName'] = 'Christ College of Engineering, Irinjalakuda';
+    _settings['minDwellMinutes'] = 10;
+    _settings['categories'] = ['Medical', 'Personal', 'Official', 'Academic', 'Emergency'];
     _outpassCounter = 100;
     _initSeed();
   }
@@ -423,5 +433,139 @@ class MockBackend {
 
   List<Map<String, dynamic>> notificationsFor(String userId) {
     return _notifications.where((n) => n['userId'] == userId).toList();
+  }
+
+  // ---- ADMIN APIs ----
+
+  List<Map<String, dynamic>> getAllUsers() {
+    return List.unmodifiable(_users);
+  }
+
+  Map<String, dynamic> addUser(Map<String, dynamic> data) {
+    final mobile = (data['mobile'] as String?)?.replaceAll(RegExp(r'\D+'), '') ?? '';
+    final normMobile = mobile.length > 10 ? mobile.substring(mobile.length - 10) : mobile;
+    if (normMobile.length != 10) {
+      throw Exception('Phone number must be exactly 10 digits');
+    }
+    if (_users.any((u) => u['mobile'] == normMobile)) {
+      throw Exception('A user with phone $normMobile already exists');
+    }
+
+    final id = 'u-user-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(999)}';
+    final user = {
+      'id': id,
+      'name': data['name'] ?? 'Unnamed',
+      'role': data['role'] ?? 'STUDENT',
+      'mobile': normMobile,
+      'department': data['department'],
+      'status': 'ACTIVE',
+      if (data['role'] == 'STUDENT') ...{
+        'registerNo': data['registerNo'] ?? 'CCE26REG${Random().nextInt(899) + 100}',
+        'semester': data['semester'] ?? 1,
+        'tutorId': data['tutorId'],
+      },
+    };
+    _users.add(user);
+    return user;
+  }
+
+  Map<String, dynamic> updateUser(String id, Map<String, dynamic> data) {
+    final index = _users.indexWhere((u) => u['id'] == id);
+    if (index == -1) throw Exception('User not found');
+    final existing = _users[index];
+
+    if (data.containsKey('mobile')) {
+      final mobile = (data['mobile'] as String).replaceAll(RegExp(r'\D+'), '');
+      final normMobile = mobile.length > 10 ? mobile.substring(mobile.length - 10) : mobile;
+      if (normMobile.length != 10) {
+        throw Exception('Phone number must be exactly 10 digits');
+      }
+      if (_users.any((u) => u['id'] != id && u['mobile'] == normMobile)) {
+        throw Exception('Another user with phone $normMobile already exists');
+      }
+      existing['mobile'] = normMobile;
+    }
+
+    if (data.containsKey('name')) existing['name'] = data['name'];
+    if (data.containsKey('role')) existing['role'] = data['role'];
+    if (data.containsKey('department')) existing['department'] = data['department'];
+    if (data.containsKey('status')) existing['status'] = data['status'];
+    if (data.containsKey('semester')) existing['semester'] = data['semester'];
+    if (data.containsKey('tutorId')) existing['tutorId'] = data['tutorId'];
+    if (data.containsKey('registerNo')) existing['registerNo'] = data['registerNo'];
+
+    return existing;
+  }
+
+  void deleteUser(String id) {
+    _users.removeWhere((u) => u['id'] == id);
+  }
+
+  int bulkAddUsers(List<Map<String, String>> rows) {
+    int count = 0;
+    for (final row in rows) {
+      final name = row['name']?.trim() ?? '';
+      final mobile = row['phone']?.replaceAll(RegExp(r'\D+'), '') ?? '';
+      final role = (row['role']?.trim().toUpperCase()) ?? 'STUDENT';
+      final department = row['department']?.trim() ?? 'CSE';
+
+      if (name.isEmpty || mobile.length < 10) continue;
+      final norm = mobile.length > 10 ? mobile.substring(mobile.length - 10) : mobile;
+      if (_users.any((u) => u['mobile'] == norm)) continue; // skip duplicates
+
+      addUser({
+        'name': name,
+        'mobile': norm,
+        'role': role,
+        'department': department,
+      });
+      count++;
+    }
+    return count;
+  }
+
+  List<Map<String, dynamic>> getDepartments() {
+    if (_departments.isEmpty) {
+      _departments.addAll([
+        {'id': 'dept-cse', 'code': 'CSE', 'name': 'Computer Science & Engineering', 'hodId': 'u-hod-1'},
+        {'id': 'dept-ece', 'code': 'ECE', 'name': 'Electronics & Communication', 'hodId': null},
+        {'id': 'dept-me', 'code': 'ME', 'name': 'Mechanical Engineering', 'hodId': null},
+        {'id': 'dept-ce', 'code': 'CE', 'name': 'Civil Engineering', 'hodId': null},
+        {'id': 'dept-eee', 'code': 'EEE', 'name': 'Electrical & Electronics', 'hodId': null},
+      ]);
+    }
+    return List.unmodifiable(_departments);
+  }
+
+  Map<String, dynamic> addOrUpdateDepartment(String code, String name, String? hodId) {
+    final existing = _departments.firstWhere((d) => d['code'] == code, orElse: () => {});
+    if (existing.isNotEmpty) {
+      existing['name'] = name;
+      existing['hodId'] = hodId;
+      return existing;
+    } else {
+      final newDept = {
+        'id': 'dept-${code.toLowerCase()}',
+        'code': code.toUpperCase(),
+        'name': name,
+        'hodId': hodId,
+      };
+      _departments.add(newDept);
+      return newDept;
+    }
+  }
+
+  List<Map<String, dynamic>> getAllOutpasses() {
+    return List.unmodifiable(_outpasses);
+  }
+
+  Map<String, dynamic> getSettings() {
+    return Map.unmodifiable(_settings);
+  }
+
+  void updateSettings({String? collegeName, int? minDwellMinutes, List<String>? categories}) {
+    if (collegeName != null) _settings['collegeName'] = collegeName;
+    if (minDwellMinutes != null) _settings['minDwellMinutes'] = minDwellMinutes;
+    if (categories != null) _settings['categories'] = categories;
   }
 }

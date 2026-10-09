@@ -149,5 +149,51 @@ void main() {
       final forcedProd = ApiClient(isDemoMode: false);
       expect(forcedProd.isDemoMode, isFalse);
     });
+
+    test('Admin role: 8921578838 logs in as ADMIN and can manage users, depts, and settings', () async {
+      // 1. Admin login with 8921578838
+      final adminUser = await api.verifyFirebasePhone('8921578838');
+      expect(adminUser['role'], equals('ADMIN'));
+      expect(adminUser['name'], equals('System Administrator'));
+
+      // 2. Unregistered phone number is rejected
+      expect(
+        () => api.verifyFirebasePhone('9999999999'),
+        throwsA(isA<Exception>()),
+      );
+
+      // 3. Admin adds a new student
+      final newStudent = await api.adminAddUser({
+        'name': 'Rahul Sharma',
+        'mobile': '9888877777',
+        'role': 'STUDENT',
+        'department': 'CSE',
+        'semester': 4,
+      });
+      expect(newStudent['name'], equals('Rahul Sharma'));
+      expect(newStudent['mobile'], equals('9888877777'));
+
+      // 4. Newly added user can now log in
+      final studentLogin = await api.verifyFirebasePhone('9888877777');
+      expect(studentLogin['role'], equals('STUDENT'));
+      expect(studentLogin['name'], equals('Rahul Sharma'));
+
+      // 5. Admin updates college settings
+      await api.adminUpdateSettings(
+        collegeName: 'Christ Institute of Technology',
+        minDwellMinutes: 15,
+        categories: ['Medical', 'Sports', 'Emergency'],
+      );
+      final settings = await api.adminGetSettings();
+      expect(settings['collegeName'], equals('Christ Institute of Technology'));
+      expect(settings['minDwellMinutes'], equals(15));
+      expect(settings['categories'], contains('Sports'));
+
+      // 6. Admin adds department
+      final dept = await api.adminAddOrUpdateDepartment('AI', 'Artificial Intelligence', null);
+      expect(dept['code'], equals('AI'));
+      final allDepts = await api.adminGetDepartments();
+      expect(allDepts.any((d) => d['code'] == 'AI'), isTrue);
+    });
   });
 }
