@@ -122,8 +122,6 @@ void main() {
           home: AppStateScope(state: state, child: const RootRouter()),
         ),
       );
-      final err = tester.takeException();
-      if (err != null) print('CAUGHT ADMIN ERROR: $err');
       expect(find.byType(AdminHome), findsOneWidget);
       expect(find.byType(StudentHome), findsNothing);
     });

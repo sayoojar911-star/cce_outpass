@@ -6,10 +6,9 @@ import 'package:asn1lib/asn1lib.dart';
 import 'package:pointycastle/export.dart';
 
 /// Device signing keys + QR token construction (PRD §7.2, §7.3).
-///
-/// v1.<outpass_id>.<ts>.<signature>
+/// `v1.<outpass_id>.<ts>.<signature>`
 ///   ts: unix seconds rounded to a 30 s step
-///   signature: ECDSA P-256 / SHA-256 over "v1.<outpass_id>.<ts>", DER, base64url
+///   signature: ECDSA P-256 / SHA-256 over `v1.<outpass_id>.<ts>`, DER, base64url
 ///
 /// MVP note (docs/decisions.md #3): keys are software-generated with
 /// pointycastle. Native targets should swap this for Keystore / Secure Enclave

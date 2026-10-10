@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'app_state.dart';
 import 'api_client.dart';
-import 'theme/app_theme.dart';
 
 /// Phone + OTP login screen.
 /// OTP verification is handled entirely server-side (the backend checks

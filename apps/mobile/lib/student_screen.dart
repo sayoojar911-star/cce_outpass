@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-import 'api_client.dart';
 import 'app_state.dart';
 import 'qr_token.dart';
 import 'theme/app_theme.dart';
@@ -82,7 +81,7 @@ class _StudentHomeState extends State<StudentHome> {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppTheme.studentAccent.withOpacity(0.12),
+                color: AppTheme.studentAccent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.school, color: AppTheme.studentAccent, size: 22),
@@ -106,9 +105,19 @@ class _StudentHomeState extends State<StudentHome> {
       ),
       body: _loading && _outpasses.isEmpty
           ? const Center(child: CircularProgressIndicator())
-          : _tabIndex == 0
-              ? _buildCurrentPassView(active)
-              : _buildHistoryView(past),
+          : _error != null && _outpasses.isEmpty
+              ? EmptyState(
+                  icon: Icons.error_outline,
+                  title: 'Unable to load outpasses',
+                  subtitle: _error!,
+                  action: OutlinedButton(
+                    onPressed: _refresh,
+                    child: const Text('Retry'),
+                  ),
+                )
+              : _tabIndex == 0
+                  ? _buildCurrentPassView(active)
+                  : _buildHistoryView(past),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tabIndex,
         onDestinationSelected: (i) => setState(() => _tabIndex = i),
@@ -187,7 +196,7 @@ class _StudentHomeState extends State<StudentHome> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: AppTheme.studentAccent.withOpacity(0.1),
+                          color: AppTheme.studentAccent.withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(Icons.place_outlined, color: AppTheme.studentAccent, size: 24),
@@ -313,7 +322,7 @@ class _StudentHomeState extends State<StudentHome> {
     return ListView.separated(
       padding: AppTheme.screenPadding,
       itemCount: past.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (ctx, i) {
         final o = past[i];
         return Card(
@@ -408,7 +417,7 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _purposeCategory,
+              initialValue: _purposeCategory,
               decoration: const InputDecoration(labelText: 'Purpose Category'),
               items: const [
                 DropdownMenuItem(value: 'Medical', child: Text('Medical')),
@@ -421,7 +430,7 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _type,
+              initialValue: _type,
               decoration: const InputDecoration(labelText: 'Outpass Type'),
               items: const [
                 DropdownMenuItem(value: 'NORMAL', child: Text('Normal (Tutor → HOD)')),

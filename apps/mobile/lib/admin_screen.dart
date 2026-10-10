@@ -68,7 +68,7 @@ class _AdminHomeState extends State<AdminHome> {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppTheme.adminAccent.withOpacity(0.12),
+                color: AppTheme.adminAccent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.admin_panel_settings, color: AppTheme.adminAccent, size: 22),
@@ -224,7 +224,7 @@ class _AdminDashboardTab extends StatelessWidget {
                         const SizedBox(height: 4),
                         Text(
                           '${users.where((u) => u['status'] != 'DELETED').length} registered active accounts',
-                          style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13),
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 13),
                         ),
                       ],
                     ),
@@ -448,7 +448,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
               const Text('Select the faculty tutor for the chosen students:', style: TextStyle(fontSize: 13)),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: chosenTutorId,
+                initialValue: chosenTutorId,
                 decoration: const InputDecoration(labelText: 'Tutor'),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('Remove Tutor Assignment')),
@@ -468,18 +468,16 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
                 final state = AppStateScope.of(context);
                 try {
                   final count = await state.api.adminAssignTutors(studentIds, chosenTutorId);
-                  if (context.mounted) {
-                    Navigator.pop(ctx);
-                    setState(() => _selectedStudentIds.clear());
-                    widget.onReload();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Assigned tutor for $count student(s)')),
-                    );
-                  }
+                  if (!mounted) return;
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  setState(() => _selectedStudentIds.clear());
+                  widget.onReload();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Assigned tutor for $count student(s)')),
+                  );
                 } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-                  }
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
                 }
               },
               child: const Text('Assign'),
@@ -508,6 +506,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
     );
 
     if (confirmed == true) {
+      if (!mounted) return;
       final state = AppStateScope.of(context);
       try {
         await state.api.adminDeleteUser(user['id']);
@@ -537,6 +536,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
     );
 
     if (confirmed == true) {
+      if (!mounted) return;
       final state = AppStateScope.of(context);
       final newStatus = user['status'] == 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
       try {
@@ -603,7 +603,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
                     Expanded(
                       flex: 2,
                       child: DropdownButtonFormField<String>(
-                        value: _deptFilter,
+                        initialValue: _deptFilter,
                         decoration: const InputDecoration(isDense: true, labelText: 'Dept'),
                         items: [
                           const DropdownMenuItem(value: null, child: Text('All Depts')),
@@ -619,7 +619,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
                     Expanded(
                       flex: 2,
                       child: DropdownButtonFormField<String>(
-                        value: _statusFilter,
+                        initialValue: _statusFilter,
                         decoration: const InputDecoration(isDense: true, labelText: 'Status'),
                         items: const [
                           DropdownMenuItem(value: null, child: Text('All')),
@@ -654,7 +654,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
         // Action banner for batch tutor assignment
         if (_selectedStudentIds.isNotEmpty)
           Container(
-            color: AppTheme.primaryLight.withOpacity(0.2),
+            color: AppTheme.primaryLight.withValues(alpha: 0.2),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
@@ -719,7 +719,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
     return ListView.separated(
       padding: AppTheme.screenPadding,
       itemCount: list.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (ctx, i) {
         final u = list[i];
         final isInactive = u['status'] == 'INACTIVE';
@@ -745,7 +745,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
                 : CircleAvatar(
                     backgroundColor: isInactive
                         ? Colors.grey.shade300
-                        : AppTheme.roleColor(role).withOpacity(0.15),
+                        : AppTheme.roleColor(role).withValues(alpha: 0.15),
                     child: Icon(
                       AppTheme.roleIcon(role),
                       color: isInactive ? Colors.grey : AppTheme.roleColor(role),
@@ -1157,7 +1157,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
               children: [
                 // Role Dropdown
                 DropdownButtonFormField<String>(
-                  value: _role,
+                  initialValue: _role,
                   decoration: const InputDecoration(labelText: 'Role'),
                   items: const [
                     DropdownMenuItem(value: 'STUDENT', child: Text('Student')),
@@ -1202,7 +1202,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
                     )
                   else
                     DropdownButtonFormField<String>(
-                      value: _department,
+                      initialValue: _department,
                       decoration: const InputDecoration(labelText: 'Department *'),
                       items: widget.departments.map<DropdownMenuItem<String>>((d) {
                         return DropdownMenuItem<String>(
@@ -1254,7 +1254,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
                 // Year (STUDENT & TUTOR)
                 if (_role == 'STUDENT' || _role == 'TUTOR') ...[
                   DropdownButtonFormField<int>(
-                    value: _year,
+                    initialValue: _year,
                     decoration: const InputDecoration(labelText: 'Year of Study *'),
                     items: [1, 2, 3, 4].map((y) {
                       return DropdownMenuItem<int>(
@@ -1273,7 +1273,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
                 // Division (Shown and required ONLY if department has divisions)
                 if ((_role == 'STUDENT' || _role == 'TUTOR') && divNames.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
-                    value: _division,
+                    initialValue: _division,
                     decoration: const InputDecoration(labelText: 'Division *'),
                     items: divNames.map((d) {
                       return DropdownMenuItem<String>(
@@ -1300,7 +1300,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: tutors.any((t) => t['id'] == _tutorId) ? _tutorId : null,
+                    initialValue: tutors.any((t) => t['id'] == _tutorId) ? _tutorId : null,
                     decoration: InputDecoration(
                       labelText: 'Assigned Tutor',
                       helperText: tutors.isEmpty
@@ -1563,7 +1563,7 @@ class _AdminDepartmentsTab extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: hodId,
+                initialValue: hodId,
                 decoration: const InputDecoration(labelText: 'Assigned HOD'),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('No HOD Assigned')),
@@ -1667,6 +1667,7 @@ class _AdminDepartmentsTab extends StatelessWidget {
     );
 
     if (confirmed == true) {
+      if (!context.mounted) return;
       final state = AppStateScope.of(context);
       try {
         await state.api.adminDeleteDivision(dept['id'], div['id']);
@@ -1707,6 +1708,7 @@ class _AdminDepartmentsTab extends StatelessWidget {
     );
 
     if (confirmed == true) {
+      if (!context.mounted) return;
       final state = AppStateScope.of(context);
       try {
         await state.api.adminDeleteDepartment(dept['id']);
@@ -1739,7 +1741,7 @@ class _AdminDepartmentsTab extends StatelessWidget {
           : ListView.separated(
               padding: AppTheme.screenPadding,
               itemCount: departments.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (ctx, i) {
                 final d = departments[i];
                 final hod = users.firstWhere((u) => u['id'] == d['hodId'], orElse: () => null);
@@ -1755,7 +1757,7 @@ class _AdminDepartmentsTab extends StatelessWidget {
                         Row(
                           children: [
                             CircleAvatar(
-                              backgroundColor: AppTheme.primaryLight.withOpacity(0.15),
+                              backgroundColor: AppTheme.primaryLight.withValues(alpha: 0.15),
                               child: Text(
                                 d['code'] ?? '',
                                 style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary, fontSize: 12),
@@ -1907,7 +1909,7 @@ class _AdminOutpassMonitorTabState extends State<_AdminOutpassMonitorTab> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: _statusFilter,
+                      initialValue: _statusFilter,
                       decoration: const InputDecoration(isDense: true, labelText: 'Status Filter'),
                       items: const [
                         DropdownMenuItem(value: null, child: Text('All Statuses')),
@@ -1924,7 +1926,7 @@ class _AdminOutpassMonitorTabState extends State<_AdminOutpassMonitorTab> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: _deptFilter,
+                      initialValue: _deptFilter,
                       decoration: const InputDecoration(isDense: true, labelText: 'Department'),
                       items: [
                         const DropdownMenuItem(value: null, child: Text('All Depts')),
@@ -1951,7 +1953,7 @@ class _AdminOutpassMonitorTabState extends State<_AdminOutpassMonitorTab> {
               : ListView.separated(
                   padding: AppTheme.screenPadding,
                   itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (ctx, i) {
                     final o = filtered[i];
                     final s = o['student'] as Map? ?? {};
@@ -2031,6 +2033,7 @@ class _OutpassDetailSheet extends StatelessWidget {
     );
 
     if (confirmed == true) {
+      if (!context.mounted) return;
       final state = AppStateScope.of(context);
       try {
         await state.api.adminCancelOutpass(outpass['id']);
@@ -2241,7 +2244,7 @@ class _AdminAuditTab extends StatelessWidget {
           : ListView.separated(
               padding: AppTheme.screenPadding,
               itemCount: auditLogs.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (ctx, i) {
                 final log = auditLogs[i];
                 final action = (log['action'] as String? ?? '').replaceAll('_', ' ');
@@ -2261,7 +2264,7 @@ class _AdminAuditTab extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: AppTheme.adminAccent.withOpacity(0.12),
+                                color: AppTheme.adminAccent.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(log['actorRole'] ?? 'SYSTEM', style: const TextStyle(fontSize: 10, color: AppTheme.adminAccent, fontWeight: FontWeight.bold)),

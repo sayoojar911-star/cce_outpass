@@ -113,7 +113,7 @@ class _ApproverHomeState extends State<ApproverHome> {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: accent.withOpacity(0.12),
+                color: accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(AppTheme.roleIcon(_state.userRole), color: accent, size: 22),
@@ -135,16 +135,26 @@ class _ApproverHomeState extends State<ApproverHome> {
       ),
       body: _loading && _pending.isEmpty
           ? const Center(child: CircularProgressIndicator())
-          : _pending.isEmpty
+          : _error != null && _pending.isEmpty
               ? EmptyState(
-                  icon: Icons.checklist_rtl_rounded,
-                  title: 'All caught up!',
-                  subtitle: 'No student outpasses waiting for your approval right now.',
+                  icon: Icons.error_outline,
+                  title: 'Unable to load approvals',
+                  subtitle: _error!,
+                  action: OutlinedButton(
+                    onPressed: _refresh,
+                    child: const Text('Retry'),
+                  ),
                 )
+              : _pending.isEmpty
+                  ? const EmptyState(
+                      icon: Icons.checklist_rtl_rounded,
+                      title: 'All caught up!',
+                      subtitle: 'No student outpasses waiting for your approval right now.',
+                    )
               : ListView.separated(
                   padding: AppTheme.screenPadding,
                   itemCount: _pending.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
                   itemBuilder: (ctx, i) {
                     final o = _pending[i];
                     final s = (o['student'] as Map?)?.cast<String, dynamic>() ?? {};

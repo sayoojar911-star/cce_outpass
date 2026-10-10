@@ -93,7 +93,6 @@ class AppTheme {
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
         seedColor: primary,
-        background: surfaceBg,
         surface: cardBg,
         primary: primary,
       ),
@@ -122,9 +121,9 @@ class AppTheme {
       navigationBarTheme: NavigationBarThemeData(
         elevation: 2,
         backgroundColor: Colors.white,
-        indicatorColor: primary.withOpacity(0.12),
-        labelTextStyle: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) {
+        indicatorColor: primary.withValues(alpha: 0.12),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
             return const TextStyle(
                 fontSize: 12, fontWeight: FontWeight.w600, color: primary);
           }
@@ -277,15 +276,15 @@ class EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: AppTheme.borderLight.withOpacity(0.5),
+                color: AppTheme.borderLight.withValues(alpha: 0.5),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 40, color: AppTheme.textMuted),

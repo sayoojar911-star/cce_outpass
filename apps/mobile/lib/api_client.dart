@@ -59,18 +59,24 @@ class ApiClient {
   }
 
   Future<dynamic> post(String path, {Object? body}) async {
-    final r = await http.post(Uri.parse('$baseUrl$path'),
-        headers: _headers, body: jsonEncode(body ?? {}));
+    final r = await http
+        .post(Uri.parse('$baseUrl$path'),
+            headers: _headers, body: jsonEncode(body ?? {}))
+        .timeout(const Duration(seconds: 15));
     return _decode(r);
   }
 
   Future<dynamic> get(String path) async {
-    final r = await http.get(Uri.parse('$baseUrl$path'), headers: _headers);
+    final r = await http
+        .get(Uri.parse('$baseUrl$path'), headers: _headers)
+        .timeout(const Duration(seconds: 15));
     return _decode(r);
   }
 
   Future<dynamic> delete(String path) async {
-    final r = await http.delete(Uri.parse('$baseUrl$path'), headers: _headers);
+    final r = await http
+        .delete(Uri.parse('$baseUrl$path'), headers: _headers)
+        .timeout(const Duration(seconds: 15));
     return _decode(r);
   }
 
@@ -124,7 +130,7 @@ class ApiClient {
       'expectedReturnAt': expectedReturnAt,
       'destination': destination,
       'purposeCategory': purposeCategory,
-      if (purposeText != null) 'purposeText': purposeText,
+      'purposeText': ?purposeText,
       'type': type,
     }))
         .cast<String, dynamic>();
@@ -144,7 +150,7 @@ class ApiClient {
       {String? comment}) async {
     return (await post('/approvals/$outpassId/decision', body: {
       'decision': decision,
-      if (comment != null) 'comment': comment,
+      'comment': ?comment,
     }))
         .cast<String, dynamic>();
   }
@@ -249,9 +255,9 @@ class ApiClient {
       int? minDwellMinutes,
       List<String>? categories}) async {
     await post('/admin/settings', body: {
-      if (collegeName != null) 'collegeName': collegeName,
-      if (minDwellMinutes != null) 'minDwellMinutes': minDwellMinutes,
-      if (categories != null) 'categories': categories,
+      'collegeName': ?collegeName,
+      'minDwellMinutes': ?minDwellMinutes,
+      'categories': ?categories,
     });
   }
 

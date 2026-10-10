@@ -117,7 +117,7 @@ class _GuardHomeState extends State<GuardHome> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
+                    color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
@@ -189,7 +189,7 @@ class _GuardHomeState extends State<GuardHome> {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppTheme.guardAccent.withOpacity(0.12),
+                color: AppTheme.guardAccent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.security, color: AppTheme.guardAccent, size: 22),

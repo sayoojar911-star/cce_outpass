@@ -86,7 +86,7 @@ Future<void> main(List<String> args) async {
   // -- Guard: exit with a token signed by the APP's own crypto module --
   final guardTok = await login(guard);
   await call('POST', '/gate/session/start', guardTok, {'gateId': 'main-gate'});
-  final scan = (String token, String dir) => call('POST', '/gate/scans', guardTok, {
+  Future<dynamic> scan(String token, String dir) => call('POST', '/gate/scans', guardTok, {
         'token': token,
         'direction': dir,
         'gateId': 'main-gate',
