@@ -102,7 +102,16 @@ export class OutpassService {
     if (user.role === 'STUDENT') {
       where.studentId = user.userId;
     } else if (user.role === 'TUTOR') {
-      where.student = { tutorId: user.userId };
+      const tutor = await this.prisma.user.findUnique({ where: { id: user.userId } });
+      if (tutor && tutor.department && tutor.year) {
+        where.student = {
+          department: tutor.department,
+          year: tutor.year,
+          ...(tutor.division ? { division: tutor.division } : {}),
+        };
+      } else {
+        where.student = { tutorId: user.userId };
+      }
     } else if (user.role === 'HOD') {
       // HOD sees requests of their department (student.department == HOD.department)
       const dept = await this.departmentOf(user);
@@ -297,8 +306,17 @@ export class OutpassService {
       return;
     }
     if (user.role === 'TUTOR') {
-      if (request.student.tutorId !== user.userId) throw new ForbiddenException();
-      return;
+      if (request.student.tutorId === user.userId) return;
+      const tutor = await this.prisma.user.findUnique({ where: { id: user.userId } });
+      if (
+        tutor &&
+        tutor.department === request.student.department &&
+        tutor.year === request.student.year &&
+        (!tutor.division || tutor.division === request.student.division)
+      ) {
+        return;
+      }
+      throw new ForbiddenException();
     }
     if (user.role === 'HOD') {
       const dept = await this.departmentOf(user);
@@ -330,6 +348,8 @@ export class OutpassService {
         registerNo: student.registerNo,
         department: student.department,
         semester: student.semester,
+        year: student.year ?? null,
+        division: student.division ?? null,
       },
       approvals: approvals.map((a: any) => ({
         stage: a.stage,

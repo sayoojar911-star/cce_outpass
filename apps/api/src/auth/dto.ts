@@ -1,8 +1,16 @@
 import { IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
 
 export function normalizeMobile(value: unknown): string {
-  const cleaned = String(value ?? '').replace(/\s+/g, '').replace(/^\+91/, '');
-  return cleaned.replace(/[^0-9]/g, '');
+  if (value === null || value === undefined) return '';
+  let cleaned = String(value).trim().replace(/[\s\-\(\)]+/g, '');
+  if (cleaned.startsWith('+91')) {
+    cleaned = cleaned.slice(3);
+  } else if (cleaned.startsWith('91') && cleaned.length === 12) {
+    cleaned = cleaned.slice(2);
+  } else if (cleaned.startsWith('+')) {
+    cleaned = cleaned.slice(1);
+  }
+  return cleaned.replace(/\D/g, '');
 }
 
 export class SendOtpDto {

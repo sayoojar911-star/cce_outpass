@@ -39,6 +39,9 @@ export class AuthService {
 
   async sendOtp(rawMobile: string) {
     const mobile = normalizeMobile(rawMobile);
+    if (!/^\d{10}$/.test(mobile)) {
+      throw new BadRequestException('Phone number must be exactly 10 digits');
+    }
     const adminPhone = process.env.ADMIN_PHONE || TempAuthConfig.ADMIN_PHONE;
 
     let user = await this.prisma.user.findFirst({
@@ -69,6 +72,9 @@ export class AuthService {
 
   async verifyOtp(rawMobile: string, code: string) {
     const mobile = normalizeMobile(rawMobile);
+    if (!/^\d{10}$/.test(mobile)) {
+      throw new BadRequestException('Phone number must be exactly 10 digits');
+    }
     const adminPhone = process.env.ADMIN_PHONE || TempAuthConfig.ADMIN_PHONE;
 
     if (!this.checkOtp(mobile, code)) {
@@ -222,7 +228,11 @@ export class AuthService {
       where: { id: user.userId },
       include: {
         devices: { where: { revokedAt: null }, select: { id: true, platform: true } },
-        student: true,
+        student: {
+          include: {
+            tutor: { select: { id: true, name: true, mobile: true } },
+          },
+        },
       },
     });
     if (!dbUser) throw new UnauthorizedException();
@@ -235,6 +245,9 @@ export class AuthService {
             registerNo: dbUser.student.registerNo,
             department: dbUser.student.department,
             semester: dbUser.student.semester,
+            year: dbUser.student.year ?? dbUser.year ?? null,
+            division: dbUser.student.division ?? dbUser.division ?? null,
+            tutor: dbUser.student.tutor,
           }
         : null,
     };
@@ -255,6 +268,8 @@ export class AuthService {
     role: string;
     mobile: string;
     department: string | null;
+    year?: number | null;
+    division?: string | null;
   }) {
     return {
       id: user.id,
@@ -262,6 +277,8 @@ export class AuthService {
       role: user.role,
       mobile: user.mobile,
       department: user.department ?? null,
+      year: (user as any).year ?? null,
+      division: (user as any).division ?? null,
     };
   }
 }
