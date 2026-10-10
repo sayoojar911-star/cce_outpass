@@ -1,13 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:qr_flutter/qr_flutter.dart';
-
 import 'app_state.dart';
-import 'qr_token.dart';
 import 'theme/app_theme.dart';
 import 'async_action_helper.dart';
+import 'widgets/ticket_outpass.dart';
 
 class StudentHome extends StatefulWidget {
   const StudentHome({super.key});
@@ -162,154 +159,46 @@ class _StudentHomeState extends State<StudentHome> {
       );
     }
 
-    final status = active['status'] as String;
-    final canShowQr = status == 'APPROVED' || status == 'EXITED' || status == 'OVERDUE';
+    final status = (active['status'] as String? ?? 'PENDING_TUTOR').toUpperCase();
 
-    return SingleChildScrollView(
-      padding: AppTheme.screenPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              side: BorderSide(
-                color: canShowQr ? AppTheme.studentAccent : AppTheme.borderLight,
-                width: canShowQr ? 2 : 1,
-              ),
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        child: Column(
+          children: [
+            TicketOutpass(
+              outpass: active,
+              enableTilt: true,
+              showStub: true,
+              onStatusChanged: _refresh,
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(active['displayId'] ?? '',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      StatusChip(status: status),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppTheme.studentAccent.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.place_outlined, color: AppTheme.studentAccent, size: 24),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(active['destination'] ?? 'Destination',
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                            Text('${active['purposeCategory']} — ${active['type'] ?? 'NORMAL'}',
-                                style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.surfaceBg,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _infoCol('Requested Exit', active['requestedExitAt']),
-                        _infoCol('Expected Return', active['expectedReturnAt']),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  if (canShowQr) ...[
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppTheme.studentAccent,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      onPressed: () => Navigator.of(context)
-                          .push(MaterialPageRoute(
-                              builder: (_) => QrScreen(outpassId: active['id'] as String)))
-                          .then((_) => _refresh()),
-                      icon: const Icon(Icons.qr_code_2, size: 24),
-                      label: const Text('Open Gate QR Pass', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                    ),
-                  ] else ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.statusPendingBg,
-                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.hourglass_top, color: AppTheme.statusPendingText, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              status == 'PENDING_TUTOR'
-                                  ? 'Awaiting tutor approval'
-                                  : 'Tutor approved! Awaiting HOD confirmation.',
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.statusPendingText),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  if (status == 'APPROVED' || status.startsWith('PENDING')) ...[
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                      onPressed: () async {
-                        await AsyncActionHelper.run(
-                          context,
-                          action: () async {
-                            await _state.api.cancelOutpass(active['id'] as String);
-                            _refresh();
-                          },
-                          successMessage: 'Outpass request cancelled',
-                        );
-                      },
-                      icon: const Icon(Icons.cancel_outlined, size: 18),
-                      label: const Text('Cancel Outpass Request'),
-                    ),
-                  ],
-                ],
+            if (status == 'APPROVED' || status.startsWith('PENDING')) ...[
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.red),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+                onPressed: () async {
+                  await AsyncActionHelper.run(
+                    context,
+                    action: () async {
+                      await _state.api.cancelOutpass(active['id'] as String);
+                      _refresh();
+                    },
+                    successMessage: 'Outpass request cancelled',
+                  );
+                },
+                icon: const Icon(Icons.cancel_outlined, size: 18),
+                label: const Text('Cancel Outpass Request'),
               ),
-            ),
-          ),
-        ],
+            ],
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
-    );
-  }
-
-  Widget _infoCol(String label, dynamic dateStr) {
-    String text = '-';
-    if (dateStr != null) {
-      try {
-        final d = DateTime.parse(dateStr).toLocal();
-        text = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')} (${d.day}/${d.month})';
-      } catch (_) {}
-    }
-    return Column(
-      children: [
-        Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-        const SizedBox(height: 4),
-        Text(text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-      ],
     );
   }
 
@@ -327,14 +216,24 @@ class _StudentHomeState extends State<StudentHome> {
       itemCount: past.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (ctx, i) {
-        final o = past[i];
+        final o = past[i] as Map<String, dynamic>;
         return Card(
           child: ListTile(
-            title: Text('${o['destination']} (${o['displayId']})',
+            title: Text('${o['destination']} (${o['displayId'] ?? ''})',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             subtitle: Text('${o['purposeCategory']} · ${o['requestedExitAt']?.substring(0, 10) ?? ''}',
                 style: const TextStyle(fontSize: 12)),
             trailing: StatusChip(status: o['status'] ?? 'CANCELLED'),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => QrScreen(
+                    outpassId: o['id'] as String,
+                    initialOutpass: o,
+                  ),
+                ),
+              );
+            },
           ),
         );
       },
@@ -489,144 +388,74 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
   }
 }
 
-/// HERO QR VIEW
+/// DIGITAL TICKET / QR SCREEN
 class QrScreen extends StatefulWidget {
-  const QrScreen({super.key, required this.outpassId});
+  const QrScreen({super.key, required this.outpassId, this.initialOutpass});
 
   final String outpassId;
+  final Map<String, dynamic>? initialOutpass;
 
   @override
   State<QrScreen> createState() => _QrScreenState();
 }
 
 class _QrScreenState extends State<QrScreen> {
-  Timer? _timer;
-  int _step = DeviceKeys.currentStep();
+  Map<String, dynamic>? _outpass;
+  bool _loading = false;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      final step = DeviceKeys.currentStep();
-      if (step != _step) setState(() => _step = step);
-    });
+    _outpass = widget.initialOutpass;
+    _fetchDetails();
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+  Future<void> _fetchDetails() async {
+    if (_outpass == null) setState(() => _loading = true);
+    try {
+      final res = await AppStateScope.of(context).api.get('/outpasses/${widget.outpassId}');
+      if (mounted) {
+        setState(() {
+          _outpass = (res as Map).cast<String, dynamic>();
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final keys = AppStateScope.of(context).deviceKeys!;
-    final token = keys.buildToken(widget.outpassId, _step);
-    final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final secsLeft = (_step + 30) - nowSec;
-    final progress = (secsLeft.clamp(0, 30) / 30.0);
-
     return Scaffold(
       backgroundColor: AppTheme.surfaceBg,
       appBar: AppBar(
-        title: const Text('Official Gate Pass QR'),
+        title: const Text('Official Digital Pass'),
         centerTitle: true,
-      ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 380),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Hero QR Card
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-                    side: const BorderSide(color: AppTheme.borderLight),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      children: [
-                        // Countdown Ring above QR
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            SizedBox(
-                              width: 54,
-                              height: 54,
-                              child: CircularProgressIndicator(
-                                value: progress,
-                                strokeWidth: 5,
-                                backgroundColor: AppTheme.borderLight,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  secsLeft > 5 ? AppTheme.studentAccent : Colors.red,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              '${secsLeft}s',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: secsLeft > 5 ? AppTheme.textDark : Colors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: QrImageView(
-                            data: token,
-                            size: 240,
-                            version: QrVersions.auto,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        const StatusChip(status: 'APPROVED'),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Scan at Security Gate',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Rotating ECDSA dynamic token re-keys every 30 seconds to prevent screenshots.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: token));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Token copied to clipboard for Guard manual entry.'),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.copy, size: 16),
-                  label: const Text('Copy Token for Guard Manual Entry'),
-                ),
-              ],
+        actions: [
+          if (_outpass != null)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh Pass',
+              onPressed: _fetchDetails,
             ),
-          ),
-        ),
+        ],
       ),
+      body: _loading && _outpass == null
+          ? const Center(child: CircularProgressIndicator())
+          : Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                child: _outpass == null
+                    ? const Text('Unable to load pass details')
+                    : TicketOutpass(
+                        outpass: _outpass!,
+                        enableTilt: true,
+                        showStub: true,
+                        onStatusChanged: _fetchDetails,
+                      ),
+              ),
+            ),
     );
   }
 }

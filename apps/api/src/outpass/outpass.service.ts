@@ -329,7 +329,12 @@ export class OutpassService {
 
   private detailInclude() {
     return {
-      student: { include: { user: { select: { name: true } } } },
+      student: {
+        include: {
+          user: { select: { name: true } },
+          tutor: { select: { name: true } },
+        },
+      },
       approvals: true,
     };
   }
@@ -350,6 +355,7 @@ export class OutpassService {
         semester: student.semester,
         year: student.year ?? null,
         division: student.division ?? null,
+        tutorName: student.tutor?.name ?? null,
       },
       approvals: approvals.map((a: any) => ({
         stage: a.stage,
