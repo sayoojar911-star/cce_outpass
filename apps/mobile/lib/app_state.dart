@@ -19,6 +19,8 @@ class AppState extends ChangeNotifier {
   String? userRole;
   String? userMobile;
   String? userDepartment;
+  int? userYear;
+  String? userDivision;
   String? refreshToken;
   DeviceKeys? deviceKeys;
 
@@ -70,6 +72,8 @@ class AppState extends ChangeNotifier {
     userRole = user['role'] as String?;
     userMobile = user['mobile'] as String?;
     userDepartment = user['department'] as String?;
+    userYear = user['year'] as int?;
+    userDivision = user['division'] as String?;
 
     // Persist refresh token for session recovery
     try {
@@ -91,6 +95,8 @@ class AppState extends ChangeNotifier {
     userRole = null;
     userMobile = null;
     userDepartment = null;
+    userYear = null;
+    userDivision = null;
     refreshToken = null;
     deviceKeys = null;
     api.accessToken = null;

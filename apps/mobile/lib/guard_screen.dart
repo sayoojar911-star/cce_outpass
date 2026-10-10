@@ -30,8 +30,12 @@ class _GuardHomeState extends State<GuardHome> {
   @override
   void initState() {
     super.initState();
-    _startShiftAndLoad();
-    _poll = Timer.periodic(const Duration(seconds: 6), (_) => _loadHistory());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _startShiftAndLoad();
+        _poll = Timer.periodic(const Duration(seconds: 6), (_) => _loadHistory());
+      }
+    });
   }
 
   @override

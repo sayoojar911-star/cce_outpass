@@ -23,12 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   AppState get _state => AppStateScope.of(context);
 
-  String _normalizedMobile() {
-    final digits = _mobile.text.replaceAll(RegExp(r'\D+'), '');
-    return digits.startsWith('91') && digits.length > 10
-        ? digits.substring(2)
-        : digits;
-  }
+  String _normalizedMobile() => normalizeMobilePhone(_mobile.text);
 
   Future<void> _sendOtp() async {
     final mobile = _normalizedMobile();

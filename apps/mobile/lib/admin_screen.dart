@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
@@ -26,7 +28,9 @@ class _AdminHomeState extends State<AdminHome> {
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadAll();
+    });
   }
 
   Future<void> _loadAll() async {
@@ -775,12 +779,12 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${u['mobile']} · Dept: ${u['department'] ?? 'None'}',
+                  '${u['mobile']} · Dept: ${u['department'] ?? 'None'}${u['year'] != null ? ' · Year ${u['year']}' : ''}${u['division'] != null ? ' (${u['division']})' : ''}',
                   style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
                 if (isStudent) ...[
                   Text(
-                    'Reg: ${studentInfo['registerNo'] ?? '-'} · Sem: ${studentInfo['semester'] ?? '-'} · Tutor: ${studentInfo['tutor']?['name'] ?? 'Not assigned'}',
+                    'Reg: ${studentInfo['registerNo'] ?? '-'} · Year ${u['year'] ?? studentInfo['year'] ?? '-'} ${u['division'] != null ? '(${u['division']})' : ''} · Tutor: ${studentInfo['tutor']?['name'] ?? 'Not assigned'}',
                     style: TextStyle(
                       fontSize: 11,
                       color: studentInfo['tutor'] != null ? AppTheme.tutorAccent : Colors.orange.shade800,
@@ -823,7 +827,7 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
   }
 }
 
-// Dialog: Add/Edit Person (Supports Role changes & all fields)
+// Dialog: Add/Edit Person (Role-specific fields & validation)
 class _PersonFormDialog extends StatefulWidget {
   const _PersonFormDialog({
     this.editUser,
@@ -843,173 +847,513 @@ class _PersonFormDialog extends StatefulWidget {
 
 class _PersonFormDialogState extends State<_PersonFormDialog> {
   final _formKey = GlobalKey<FormState>();
-  late String _name;
-  late String _mobile;
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _regNoCtrl = TextEditingController();
+
   late String _role;
   String? _department;
+  int? _year; // 1, 2, 3, 4
+  String? _division;
   String? _tutorId;
-  int _semester = 1;
-  String? _registerNo;
+  bool _replaceHod = false;
+
   bool _busy = false;
+  String? _errorMessage;
+
+  static const _yearLabels = {
+    1: '1st Year',
+    2: '2nd Year',
+    3: '3rd Year',
+    4: '4th Year',
+  };
 
   @override
   void initState() {
     super.initState();
     final u = widget.editUser;
-    _name = u?['name'] ?? '';
-    _mobile = u?['mobile'] ?? '';
-    _role = u?['role'] ?? 'STUDENT';
-    _department = u?['department'] ?? (widget.departments.isNotEmpty ? widget.departments.first['code'] : 'CSE');
+    if (u != null) {
+      _role = u['role'] ?? 'STUDENT';
+      _nameCtrl.text = u['name'] ?? '';
+      _phoneCtrl.text = u['mobile'] ?? '';
+      _department = u['department'] as String?;
+      _year = u['year'] as int?;
+      _division = u['division'] as String?;
 
-    final student = u?['student'] as Map? ?? {};
-    _tutorId = student['tutorId'];
-    _semester = student['semester'] ?? 1;
-    _registerNo = student['registerNo'];
+      final student = u['student'] as Map? ?? {};
+      _tutorId = student['tutorId'] as String?;
+      _regNoCtrl.text = (student['registerNo'] ?? '') as String;
+      if (_year == null && student['year'] != null) {
+        _year = student['year'] as int?;
+      }
+      if (_division == null && student['division'] != null) {
+        _division = student['division'] as String?;
+      }
+    } else {
+      _role = 'STUDENT';
+      if (widget.departments.isNotEmpty) {
+        _department = widget.departments.first['code'] as String?;
+      }
+      _year = 1;
+    }
+
+    _phoneCtrl.addListener(() => setState(() {}));
+    _nameCtrl.addListener(() => setState(() {}));
+    _ensureValidDepartmentAndDivisions();
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _regNoCtrl.dispose();
+    super.dispose();
+  }
+
+  Map<String, dynamic>? get _currentDepartmentObj {
+    if (_department == null) return null;
+    for (final d in widget.departments) {
+      if (d['code'] == _department) return d as Map<String, dynamic>;
+    }
+    return null;
+  }
+
+  List<String> get _currentDivisionNames {
+    final dept = _currentDepartmentObj;
+    if (dept == null) return [];
+    final divs = (dept['divisions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    return divs.map((d) => d['name'].toString()).toList();
+  }
+
+  void _ensureValidDepartmentAndDivisions() {
+    final divNames = _currentDivisionNames;
+    if (divNames.isNotEmpty) {
+      if (_division == null || !divNames.contains(_division)) {
+        _division = divNames.first;
+      }
+    } else {
+      _division = null;
+    }
+  }
+
+  void _onDepartmentChanged(String? newDept) {
+    setState(() {
+      _department = newDept;
+      _division = null;
+      _tutorId = null;
+      _ensureValidDepartmentAndDivisions();
+    });
+  }
+
+  void _onRoleChanged(String newRole) {
+    setState(() {
+      _role = newRole;
+      _replaceHod = false;
+      if (_role == 'GUARD' || _role == 'ADMIN') {
+        _department = null;
+        _year = null;
+        _division = null;
+        _tutorId = null;
+      } else if (_role == 'HOD') {
+        if (_department == null && widget.departments.isNotEmpty) {
+          _department = widget.departments.first['code'] as String?;
+        }
+        _year = null;
+        _division = null;
+        _tutorId = null;
+      } else if (_role == 'TUTOR') {
+        if (_department == null && widget.departments.isNotEmpty) {
+          _department = widget.departments.first['code'] as String?;
+        }
+        _year ??= 1;
+        _tutorId = null;
+        _ensureValidDepartmentAndDivisions();
+      } else if (_role == 'STUDENT') {
+        if (_department == null && widget.departments.isNotEmpty) {
+          _department = widget.departments.first['code'] as String?;
+        }
+        _year ??= 1;
+        _ensureValidDepartmentAndDivisions();
+      }
+    });
+  }
+
+  Map<String, dynamic>? get _existingActiveHod {
+    if (_role != 'HOD' || _department == null) return null;
+    final isEdit = widget.editUser != null;
+    for (final u in widget.allUsers) {
+      if (u['role'] == 'HOD' &&
+          u['status'] == 'ACTIVE' &&
+          u['department'] == _department &&
+          (!isEdit || u['id'] != widget.editUser!['id'])) {
+        return u as Map<String, dynamic>;
+      }
+    }
+    return null;
+  }
+
+  List<dynamic> get _availableTutors {
+    return widget.allUsers.where((u) {
+      if (u['role'] != 'TUTOR' || u['status'] == 'DELETED') return false;
+      if (u['department'] != _department) return false;
+      if (u['year'] != _year) return false;
+      final divNames = _currentDivisionNames;
+      if (divNames.isNotEmpty) {
+        if (u['division'] != _division) return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  bool get _isValid {
+    final name = _nameCtrl.text.trim();
+    final phone = normalizeMobilePhone(_phoneCtrl.text);
+    if (name.isEmpty || phone.length != 10) return false;
+
+    if (_role == 'GUARD' || _role == 'ADMIN') {
+      return true;
+    }
+
+    if (widget.departments.isEmpty) return false;
+    if (_department == null || _department!.isEmpty) return false;
+
+    if (_role == 'HOD') {
+      if (_existingActiveHod != null && !_replaceHod) return false;
+      return true;
+    }
+
+    if (_role == 'TUTOR' || _role == 'STUDENT') {
+      if (_year == null || _year! < 1 || _year! > 4) return false;
+      final divNames = _currentDivisionNames;
+      if (divNames.isNotEmpty && (_division == null || _division!.isEmpty)) {
+        return false;
+      }
+      return true;
+    }
+
+    return false;
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    _formKey.currentState!.save();
-
-    final cleanMobile = _mobile.replaceAll(RegExp(r'\D+'), '');
-    final normMobile = cleanMobile.length > 10 ? cleanMobile.substring(cleanMobile.length - 10) : cleanMobile;
-
-    final isEdit = widget.editUser != null;
-    final exists = widget.allUsers.any((u) =>
-        u['mobile'] == normMobile && (!isEdit || u['id'] != widget.editUser!['id']));
-    if (exists) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This 10-digit phone number is already registered')),
-      );
+    final normPhone = normalizeMobilePhone(_phoneCtrl.text);
+    if (normPhone.length != 10) {
+      setState(() => _errorMessage = 'Enter a valid 10-digit mobile number');
       return;
     }
 
-    setState(() => _busy = true);
+    final isEdit = widget.editUser != null;
+    final exists = widget.allUsers.any((u) =>
+        u['mobile'] == normPhone && (!isEdit || u['id'] != widget.editUser!['id']));
+    if (exists) {
+      setState(() => _errorMessage = 'This 10-digit phone number is already registered');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _errorMessage = null;
+    });
+
     final state = AppStateScope.of(context);
     try {
-      final payload = {
-        'name': _name,
-        'mobile': normMobile,
+      final payload = <String, dynamic>{
+        'name': _nameCtrl.text.trim(),
+        'mobile': normPhone,
         'role': _role,
-        'department': _department,
-        if (_role == 'STUDENT') ...{
-          'semester': _semester,
-          if (_tutorId != null) 'tutorId': _tutorId,
-          if (_registerNo != null && _registerNo!.isNotEmpty) 'registerNo': _registerNo,
+        if (_role != 'GUARD' && _role != 'ADMIN') 'department': _department,
+        if (_role == 'TUTOR' || _role == 'STUDENT') ...{
+          'year': _year,
+          if (_currentDivisionNames.isNotEmpty) 'division': _division,
         },
+        if (_role == 'STUDENT') ...{
+          if (_tutorId != null) 'tutorId': _tutorId,
+          if (_regNoCtrl.text.trim().isNotEmpty)
+            'registerNo': _regNoCtrl.text.trim(),
+        },
+        if (_role == 'HOD' && _replaceHod) 'replaceHod': true,
       };
 
       if (isEdit) {
-        await state.api.adminUpdateUser(widget.editUser!['id'], payload);
+        await state.api
+            .adminUpdateUser(widget.editUser!['id'], payload)
+            .timeout(const Duration(seconds: 15));
       } else {
-        await state.api.adminAddUser(payload);
+        await state.api
+            .adminAddUser(payload)
+            .timeout(const Duration(seconds: 15));
+      }
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green.shade700,
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(isEdit ? 'Person updated successfully' : 'Person registered successfully'),
+              ],
+            ),
+          ),
+        );
       }
       widget.onSuccess();
-      if (mounted) Navigator.pop(context);
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Request timed out after 15 seconds. Please try again.';
+          _busy = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Request timed out after 15s')),
+        );
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.message;
+          _busy = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        final errText = e.toString().replaceFirst('Exception: ', '');
+        setState(() {
+          _errorMessage = errText;
+          _busy = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errText)),
+        );
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final tutors = widget.allUsers.where((u) => u['role'] == 'TUTOR' && u['status'] != 'DELETED').toList();
     final isEdit = widget.editUser != null;
+    final divNames = _currentDivisionNames;
+    final tutors = _availableTutors;
+    final existingHod = _existingActiveHod;
 
     return AlertDialog(
       title: Text(isEdit ? 'Edit Person' : 'Register New Person'),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                initialValue: _name,
-                decoration: const InputDecoration(labelText: 'Full Name'),
-                validator: (v) => v == null || v.trim().isEmpty ? 'Enter name' : null,
-                onSaved: (v) => _name = v!.trim(),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                initialValue: _mobile,
-                decoration: const InputDecoration(
-                  labelText: 'Phone Number (10 digits)',
-                  prefixText: '+91 ',
-                ),
-                keyboardType: TextInputType.phone,
-                validator: (v) {
-                  final digits = (v ?? '').replaceAll(RegExp(r'\D+'), '');
-                  final norm = digits.length > 10 ? digits.substring(digits.length - 10) : digits;
-                  return norm.length != 10 ? 'Enter valid 10-digit number' : null;
-                },
-                onSaved: (v) => _mobile = v!,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _role,
-                decoration: const InputDecoration(labelText: 'Role (Changeable)'),
-                items: const [
-                  DropdownMenuItem(value: 'STUDENT', child: Text('Student')),
-                  DropdownMenuItem(value: 'TUTOR', child: Text('Tutor')),
-                  DropdownMenuItem(value: 'HOD', child: Text('HOD')),
-                  DropdownMenuItem(value: 'GUARD', child: Text('Security Guard')),
-                  DropdownMenuItem(value: 'ADMIN', child: Text('Administrator')),
-                ],
-                onChanged: (v) => setState(() => _role = v!),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _department,
-                decoration: const InputDecoration(labelText: 'Department'),
-                items: widget.departments.map<DropdownMenuItem<String>>((d) {
-                  return DropdownMenuItem<String>(
-                    value: d['code'] as String,
-                    child: Text('${d['code']} — ${d['name']}'),
-                  );
-                }).toList(),
-                onChanged: (v) => setState(() => _department = v),
-              ),
-              if (_role == 'STUDENT') ...[
-                const SizedBox(height: 12),
-                TextFormField(
-                  initialValue: _registerNo,
-                  decoration: const InputDecoration(labelText: 'Register / Roll No'),
-                  onSaved: (v) => _registerNo = v?.trim(),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                  value: _semester,
-                  decoration: const InputDecoration(labelText: 'Semester / Year'),
-                  items: List.generate(8, (i) => i + 1).map((s) {
-                    return DropdownMenuItem(value: s, child: Text('Semester $s'));
-                  }).toList(),
-                  onChanged: (v) => setState(() => _semester = v!),
-                ),
-                const SizedBox(height: 12),
+      content: SizedBox(
+        width: 440,
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Role Dropdown
                 DropdownButtonFormField<String>(
-                  value: _tutorId,
-                  decoration: const InputDecoration(labelText: 'Assigned Tutor'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('None / Select Tutor')),
-                    ...tutors.map((t) => DropdownMenuItem<String>(
-                          value: t['id'] as String,
-                          child: Text('${t['name']} (${t['department'] ?? 'Dept'})'),
-                        )),
+                  value: _role,
+                  decoration: const InputDecoration(labelText: 'Role'),
+                  items: const [
+                    DropdownMenuItem(value: 'STUDENT', child: Text('Student')),
+                    DropdownMenuItem(value: 'TUTOR', child: Text('Tutor')),
+                    DropdownMenuItem(value: 'HOD', child: Text('HOD')),
+                    DropdownMenuItem(value: 'GUARD', child: Text('Security Guard')),
+                    DropdownMenuItem(value: 'ADMIN', child: Text('Administrator')),
                   ],
-                  onChanged: (v) => setState(() => _tutorId = v),
+                  onChanged: (v) => _onRoleChanged(v!),
                 ),
+                const SizedBox(height: 12),
+
+                // Name
+                TextFormField(
+                  controller: _nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Full Name *'),
+                ),
+                const SizedBox(height: 12),
+
+                // Phone
+                TextFormField(
+                  controller: _phoneCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone Number (10 digits) *',
+                    prefixText: '+91 ',
+                  ),
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 12),
+
+                // Department (Only for STUDENT, TUTOR, HOD)
+                if (_role != 'GUARD' && _role != 'ADMIN') ...[
+                  if (widget.departments.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text('Create a department first',
+                          style: TextStyle(color: Colors.brown)),
+                    )
+                  else
+                    DropdownButtonFormField<String>(
+                      value: _department,
+                      decoration: const InputDecoration(labelText: 'Department *'),
+                      items: widget.departments.map<DropdownMenuItem<String>>((d) {
+                        return DropdownMenuItem<String>(
+                          value: d['code'] as String,
+                          child: Text('${d['code']} — ${d['name']}'),
+                        );
+                      }).toList(),
+                      onChanged: _onDepartmentChanged,
+                    ),
+                  const SizedBox(height: 12),
+                ],
+
+                // HOD warning & replace
+                if (_role == 'HOD' && existingHod != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$_department already has a HOD: ${existingHod['name']}',
+                          style: TextStyle(
+                            color: Colors.orange.shade900,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'Replace ${existingHod['name']} as HOD',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          value: _replaceHod,
+                          onChanged: (val) => setState(() => _replaceHod = val ?? false),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // Year (STUDENT & TUTOR)
+                if (_role == 'STUDENT' || _role == 'TUTOR') ...[
+                  DropdownButtonFormField<int>(
+                    value: _year,
+                    decoration: const InputDecoration(labelText: 'Year of Study *'),
+                    items: [1, 2, 3, 4].map((y) {
+                      return DropdownMenuItem<int>(
+                        value: y,
+                        child: Text(_yearLabels[y]!),
+                      );
+                    }).toList(),
+                    onChanged: (v) => setState(() {
+                      _year = v;
+                      _tutorId = null;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // Division (Shown and required ONLY if department has divisions)
+                if ((_role == 'STUDENT' || _role == 'TUTOR') && divNames.isNotEmpty) ...[
+                  DropdownButtonFormField<String>(
+                    value: _division,
+                    decoration: const InputDecoration(labelText: 'Division *'),
+                    items: divNames.map((d) {
+                      return DropdownMenuItem<String>(
+                        value: d,
+                        child: Text('Division $d'),
+                      );
+                    }).toList(),
+                    onChanged: (v) => setState(() {
+                      _division = v;
+                      _tutorId = null;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // Student specific: Register No & Tutor dropdown
+                if (_role == 'STUDENT') ...[
+                  TextFormField(
+                    controller: _regNoCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Register / Roll No (Optional)',
+                      hintText: 'e.g. CCE22CS045',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: tutors.any((t) => t['id'] == _tutorId) ? _tutorId : null,
+                    decoration: InputDecoration(
+                      labelText: 'Assigned Tutor',
+                      helperText: tutors.isEmpty
+                          ? 'No tutors found for $_department ${_yearLabels[_year] ?? ''} ${divNames.isNotEmpty ? (_division ?? '') : ''}'
+                          : null,
+                    ),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('None / Select Later')),
+                      ...tutors.map((t) => DropdownMenuItem<String>(
+                            value: t['id'] as String,
+                            child: Text('${t['name']} (${t['mobile']})'),
+                          )),
+                    ],
+                    onChanged: (v) => setState(() => _tutorId = v),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // Error message banner
+                if (_errorMessage != null)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4, bottom: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.red.shade700, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(color: Colors.red.shade800, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
-            ],
+            ),
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
-          onPressed: _busy ? null : _submit,
+          onPressed: (_busy || !_isValid) ? null : _submit,
           child: Text(_busy ? 'Saving…' : (isEdit ? 'Update Person' : 'Register')),
         ),
       ],
@@ -1256,6 +1600,95 @@ class _AdminDepartmentsTab extends StatelessWidget {
     );
   }
 
+  void _showAddDivisionDialog(BuildContext context, Map<String, dynamic> dept) {
+    final divCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Add Division to ${dept['code']}'),
+        content: TextField(
+          controller: divCtrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Division Name (e.g. A, B, C)',
+            hintText: 'Enter division letter/name',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              final name = divCtrl.text.trim().toUpperCase();
+              if (name.isEmpty) return;
+              final state = AppStateScope.of(context);
+              try {
+                await state.api.adminAddDivision(dept['id'], name);
+                onReload();
+                if (context.mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      backgroundColor: Colors.green.shade700,
+                      content: Text('Division $name added to ${dept['code']}'),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error adding division: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Add Division'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteDivision(
+      BuildContext context, Map<String, dynamic> dept, Map<String, dynamic> div) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete Division ${div['name']}?'),
+        content: Text('Are you sure you want to delete division ${div['name']} from ${dept['code']}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final state = AppStateScope.of(context);
+      try {
+        await state.api.adminDeleteDivision(dept['id'], div['id']);
+        onReload();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.green.shade700,
+              content: Text('Division ${div['name']} deleted from ${dept['code']}'),
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cannot delete division: $e')),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _deleteDepartment(BuildContext context, Map<String, dynamic> dept) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1306,48 +1739,89 @@ class _AdminDepartmentsTab extends StatelessWidget {
           : ListView.separated(
               padding: AppTheme.screenPadding,
               itemCount: departments.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (ctx, i) {
                 final d = departments[i];
                 final hod = users.firstWhere((u) => u['id'] == d['hodId'], orElse: () => null);
                 final memberCount = users.where((u) => u['department'] == d['code'] && u['status'] != 'DELETED').length;
+                final divisions = (d['divisions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
 
                 return Card(
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: AppTheme.primaryLight.withOpacity(0.15),
-                      child: Text(
-                        d['code'] ?? '',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary, fontSize: 12),
-                      ),
-                    ),
-                    title: Text(d['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Column(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          hod != null ? 'HOD: ${hod['name']} (${hod['mobile']})' : 'HOD: None assigned',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: hod != null ? AppTheme.hodAccent : AppTheme.textMuted,
-                            fontWeight: hod != null ? FontWeight.w600 : FontWeight.normal,
-                          ),
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor: AppTheme.primaryLight.withOpacity(0.15),
+                              child: Text(
+                                d['code'] ?? '',
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary, fontSize: 12),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(d['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    hod != null ? 'HOD: ${hod['name']} (${hod['mobile']})' : 'HOD: None assigned',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: hod != null ? AppTheme.hodAccent : AppTheme.textMuted,
+                                      fontWeight: hod != null ? FontWeight.w600 : FontWeight.normal,
+                                    ),
+                                  ),
+                                  Text('$memberCount active person(s) in this department', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              tooltip: 'Edit department',
+                              onPressed: () => _showDeptDialog(context, dept: d),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.red),
+                              tooltip: 'Delete department',
+                              onPressed: () => _deleteDepartment(context, d),
+                            ),
+                          ],
                         ),
-                        Text('$memberCount active person(s) in this department', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                      ],
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined),
-                          tooltip: 'Edit department',
-                          onPressed: () => _showDeptDialog(context, dept: d),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          tooltip: 'Delete department',
-                          onPressed: () => _deleteDepartment(context, d),
+                        const Divider(height: 20),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const Text('Divisions: ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                            const SizedBox(width: 6),
+                            if (divisions.isEmpty)
+                              const Expanded(
+                                child: Text('No divisions', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                              )
+                            else
+                              Expanded(
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: divisions.map((div) {
+                                    return InputChip(
+                                      label: Text(div['name'] ?? ''),
+                                      deleteIconColor: Colors.red.shade400,
+                                      onDeleted: () => _deleteDivision(context, d, div),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            TextButton.icon(
+                              onPressed: () => _showAddDivisionDialog(context, d),
+                              icon: const Icon(Icons.add, size: 16),
+                              label: const Text('Add Division'),
+                            ),
+                          ],
                         ),
                       ],
                     ),

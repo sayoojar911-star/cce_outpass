@@ -14,6 +14,21 @@ String uuidV4() {
       '${h.substring(16, 20)}-${h.substring(20)}';
 }
 
+/// Normalizes an input mobile number: strips spaces, dashes, +91, 91 prefixes,
+/// and returns the clean digit string.
+String normalizeMobilePhone(String? value) {
+  if (value == null) return '';
+  var cleaned = value.trim().replaceAll(RegExp(r'[\s\-\(\)]+'), '');
+  if (cleaned.startsWith('+91')) {
+    cleaned = cleaned.substring(3);
+  } else if (cleaned.startsWith('91') && cleaned.length == 12) {
+    cleaned = cleaned.substring(2);
+  } else if (cleaned.startsWith('+')) {
+    cleaned = cleaned.substring(1);
+  }
+  return cleaned.replaceAll(RegExp(r'\D'), '');
+}
+
 /// Thin typed client for the /v1 API. Single source of truth is the server
 /// (PRD §4 principles) — the app only displays and requests.
 class ApiClient {
@@ -198,6 +213,17 @@ class ApiClient {
 
   Future<void> adminDeleteDepartment(String id) async {
     await delete('/admin/departments/$id');
+  }
+
+  Future<Map<String, dynamic>> adminAddDivision(
+      String deptId, String name) async {
+    return (await post('/admin/departments/$deptId/divisions',
+            body: {'name': name}) as Map)
+        .cast<String, dynamic>();
+  }
+
+  Future<void> adminDeleteDivision(String deptId, String divisionId) async {
+    await delete('/admin/departments/$deptId/divisions/$divisionId');
   }
 
   Future<int> adminAssignTutors(List<String> studentIds, String? tutorId) async {
