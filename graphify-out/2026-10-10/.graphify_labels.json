@@ -1,5 +1,5 @@
 {
-  "0": "auth.decorator.ts",
+  "0": "phone_normalization_and_router_test.dart",
   "1": "OutpassService",
   "2": "GateService",
   "3": "AppDelegate",
@@ -19,12 +19,10 @@
   "17": "compilerOptions",
   "18": "win32_window.cpp",
   "19": "guard_screen.dart",
-  "20": "NotificationsService",
   "21": "main.dart",
   "22": "approver_screen.dart",
   "23": "dependencies",
   "24": "State",
-  "25": "devDependencies",
   "26": "manifest.json",
   "27": "@nestjs/common",
   "28": "utils.cpp",
@@ -34,7 +32,6 @@
   "32": "nest-cli.json",
   "33": "device_key_persistence_test.dart",
   "34": "AdminController",
-  "35": "auth.service.ts",
   "36": "MainActivity.kt",
   "37": "CCE Outpass — MVP",
   "38": "Runner-Bridging-Header.h",
@@ -50,13 +47,10 @@
   "48": "cce_outpass",
   "49": "LaunchImage.imageset/README.md",
   "50": "decisions.md",
-  "51": "@prisma/client",
   "52": "StatelessWidget",
   "53": ".MessageHandler",
   "54": "FlutterWindow",
   "55": "Point",
-  "56": "AppState",
   "57": "main.ts",
-  "58": "ApiException",
-  "59": "FakeSecureStorage"
+  "58": "ApiException"
 }

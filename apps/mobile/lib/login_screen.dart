@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'app_state.dart';
@@ -19,6 +20,33 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _otpSent = false;
   bool _busy = false;
   String? _error;
+  int _resendCooldown = 0;
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _mobile.dispose();
+    _code.dispose();
+    super.dispose();
+  }
+
+  void _startCooldown() {
+    setState(() => _resendCooldown = 30);
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      if (_resendCooldown <= 1) {
+        t.cancel();
+        setState(() => _resendCooldown = 0);
+      } else {
+        setState(() => _resendCooldown--);
+      }
+    });
+  }
 
   AppState get _state => AppStateScope.of(context);
 
@@ -41,22 +69,29 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         setState(() {
           _otpSent = true;
-          _busy = false;
         });
+        _startCooldown();
       }
     } on ApiException catch (e) {
-      if (mounted) setState(() { _error = e.message; _busy = false; });
+      if (mounted) setState(() => _error = e.message);
     } catch (e) {
       if (mounted) {
         setState(() {
           _error = e.toString().replaceFirst('Exception: ', '');
-          _busy = false;
         });
       }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _verify() async {
+    final code = _code.text.trim();
+    if (code.length != 6) {
+      setState(() => _error = 'Please enter a 6-digit OTP');
+      return;
+    }
+
     setState(() {
       _busy = true;
       _error = null;
@@ -64,16 +99,17 @@ class _LoginScreenState extends State<LoginScreen> {
     final mobile = _normalizedMobile();
 
     try {
-      await _state.verifyOtpAndLogin(mobile, _code.text.trim());
+      await _state.verifyOtpAndLogin(mobile, code);
     } on ApiException catch (e) {
-      if (mounted) setState(() { _error = e.message; _busy = false; });
+      if (mounted) setState(() => _error = e.message);
     } catch (e) {
       if (mounted) {
         setState(() {
           _error = e.toString().replaceFirst('Exception: ', '');
-          _busy = false;
         });
       }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -217,16 +253,31 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         if (_otpSent) ...[
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: () {
-                              setState(() {
-                                _otpSent = false;
-                                _code.clear();
-                                _error = null;
-                              });
-                            },
-                            child: const Text('← Change number'),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              TextButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _otpSent = false;
+                                          _code.clear();
+                                          _error = null;
+                                        });
+                                      },
+                                child: const Text('← Change number'),
+                              ),
+                              TextButton(
+                                onPressed: (_busy || _resendCooldown > 0)
+                                    ? null
+                                    : _sendOtp,
+                                child: Text(_resendCooldown > 0
+                                    ? 'Resend OTP (${_resendCooldown}s)'
+                                    : 'Resend OTP'),
+                              ),
+                            ],
                           ),
                         ],
                       ],

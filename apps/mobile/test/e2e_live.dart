@@ -10,10 +10,11 @@ import 'package:cce_outpass/qr_token.dart';
 /// lifecycle using the SAME crypto module the Flutter app ships
 /// (lib/qr_token.dart). Proves the client's ECDSA P-256 signing is
 /// server-compatible, plus single-use, replay and dwell rules.
-const student = '9000000010';
-const tutor = '9000000001'; // Dr. Anand Kumar (TUTOR)
-const hod = '9000000002'; // Dr. Priya Menon (HOD)
-const guard = '9000000090';
+const student = '8921578831';
+const tutor = '8921578833'; // Dr. Anand Kumar (TUTOR)
+const hod = '8921578832'; // Dr. Priya Menon (HOD)
+const guard = '8921578834';
+const admin = '8921578838';
 
 late String apiBase;
 
@@ -30,11 +31,14 @@ Future<dynamic> call(String method, String path, String? token, [Map<String, dyn
 
 Future<String> login(String mobile) async {
   final idToken = Platform.environment['FIREBASE_ID_TOKEN_$mobile'];
-  if (idToken == null) {
-    throw StateError('Set FIREBASE_ID_TOKEN_$mobile to a current Firebase phone-auth ID token');
+  if (idToken != null) {
+    final verify = await call(
+        'POST', '/auth/firebase/verify', null, {'idToken': idToken});
+    return (verify as Map)['accessToken'] as String;
   }
+  await call('POST', '/auth/otp/send', null, {'mobile': mobile});
   final verify = await call(
-      'POST', '/auth/firebase/verify', null, {'idToken': idToken});
+      'POST', '/auth/otp/verify', null, {'mobile': mobile, 'code': '123456'});
   return (verify as Map)['accessToken'] as String;
 }
 
@@ -50,15 +54,16 @@ Future<void> main(List<String> args) async {
   }
   apiBase = args.isNotEmpty ? args[0] : 'http://localhost:3000/v1';
 
+  final adminTok = await login(admin);
+  for (final o in (await call('GET', '/admin/outpasses', adminTok) as List)) {
+    final m = o as Map;
+    try {
+      await call('POST', '/admin/outpasses/${m['id']}/cancel', adminTok, {'reason': 'E2E Reset'});
+    } catch (_) {}
+  }
+
   // -- Student: login, device binding, request --
   final studentTok = await login(student);
-  // Self-cleanup so the script is repeatable: cancel leftover active passes.
-  for (final o in (await call('GET', '/outpasses', studentTok) as List)) {
-    final m = o as Map;
-    if (['PENDING_TUTOR', 'PENDING_HOD', 'APPROVED'].contains(m['status'])) {
-      await call('POST', '/outpasses/${m['id']}/cancel', studentTok);
-    }
-  }
   final keys = DeviceKeys.generate();
   await call('POST', '/auth/device/register', studentTok,
       {'publicKeyPem': keys.publicKeyPem(), 'platform': 'dart-e2e'});
@@ -70,18 +75,18 @@ Future<void> main(List<String> args) async {
     'type': 'EMERGENCY',
   }) as Map;
   final id = created['id'] as String;
-  check('student login + device bind + request (${created['displayId']})',
+  check('1. Student login + device bind + request (${created['displayId']})',
       created['status'] == 'PENDING_TUTOR');
 
   // -- Tutor approval --
   final tutorTok = await login(tutor);
   final t1 = await call('POST', '/approvals/$id/decision', tutorTok, {'decision': 'APPROVED'});
-  check('tutor approval → PENDING_HOD', (t1 as Map)['status'] == 'PENDING_HOD');
+  check('2. Tutor approval → PENDING_HOD', (t1 as Map)['status'] == 'PENDING_HOD');
 
   // -- HOD approval --
   final hodTok = await login(hod);
   final t2 = await call('POST', '/approvals/$id/decision', hodTok, {'decision': 'APPROVED'});
-  check('HOD approval → APPROVED (QR active)', (t2 as Map)['status'] == 'APPROVED');
+  check('3. HOD approval → APPROVED (QR active)', (t2 as Map)['status'] == 'APPROVED');
 
   // -- Guard: exit with a token signed by the APP's own crypto module --
   final guardTok = await login(guard);
@@ -95,20 +100,52 @@ Future<void> main(List<String> args) async {
 
   final step = DeviceKeys.currentStep();
   final exitRes = await scan(keys.buildToken(id, step), 'EXIT') as Map;
-  check('exit scan (app-signed token) → OK_EXIT', exitRes['result'] == 'OK_EXIT');
+  check('4. Guard exit scan (app-signed token) → OK_EXIT', exitRes['result'] == 'OK_EXIT');
 
   // Single-use (SEC-06): fresh token, same pass, exit mode again.
   final step2 = step + 30;
   final reuse = await scan(keys.buildToken(id, step2), 'EXIT') as Map;
-  check('rescan in exit mode → ALREADY_USED', reuse['result'] == 'ALREADY_USED');
+  check('5. Rescan in exit mode → ALREADY_USED', reuse['result'] == 'ALREADY_USED');
 
   // Replay protection (SEC-QR-05): stale ts is rejected outright.
   final stale = await scan(keys.buildToken(id, step - 60), 'EXIT') as Map;
-  check('stale token → QR_STALE', stale['result'] == 'QR_STALE');
+  check('6. Stale token rejection → QR_STALE', stale['result'] == 'QR_STALE');
 
   // Return flow: dwell rule blocks an immediate re-entry (10 min, PRD §6.9).
-  // The full OK_ENTRY → RETURNED transition is covered by the jest e2e suite,
-  // which can backdate exitAt directly in the test database.
   final tooSoon = await scan(keys.buildToken(id, step2 + 30), 'ENTRY') as Map;
-  check('immediate entry → MIN_DWELL', tooSoon['result'] == 'MIN_DWELL');
+  check('7. Guard immediate re-entry blocked → MIN_DWELL', tooSoon['result'] == 'MIN_DWELL');
+
+  // Cancel first active pass via admin so student can create subsequent passes for testing
+  await call('POST', '/admin/outpasses/$id/cancel', adminTok, {'reason': 'Test Lifecycle Reset'});
+
+  // 8. Test Cancellation Flow: Student creates request and immediately cancels
+  final reqToCancel = await call('POST', '/outpasses', studentTok, {
+    'requestedExitAt': DateTime.now().toIso8601String(),
+    'expectedReturnAt': DateTime.now().add(const Duration(hours: 3)).toIso8601String(),
+    'destination': 'Library',
+    'purposeCategory': 'Academic',
+    'type': 'NORMAL',
+  }) as Map;
+  final cancelId = reqToCancel['id'] as String;
+  final cancelRes = await call('POST', '/outpasses/$cancelId/cancel', studentTok) as Map;
+  check('8. Student cancellation flow → CANCELLED', cancelRes['status'] == 'CANCELLED');
+
+  // 9. Test Rejection Flow: Student creates request, Tutor rejects with reason
+  final reqToReject = await call('POST', '/outpasses', studentTok, {
+    'requestedExitAt': DateTime.now().toIso8601String(),
+    'expectedReturnAt': DateTime.now().add(const Duration(hours: 1)).toIso8601String(),
+    'destination': 'Market',
+    'purposeCategory': 'Personal',
+    'type': 'NORMAL',
+  }) as Map;
+  final rejectId = reqToReject['id'] as String;
+  final rejectRes = await call('POST', '/approvals/$rejectId/decision', tutorTok, {
+    'decision': 'REJECTED',
+    'remarks': 'Class test scheduled at this hour',
+  }) as Map;
+  check('9. Tutor rejection flow with reason → REJECTED', rejectRes['status'] == 'REJECTED');
+
+  // 10. Audit Log Verification via Admin API
+  final auditLogs = await call('GET', '/admin/audit', adminTok) as List;
+  check('10. Admin Audit Log populated and verifiable', auditLogs.isNotEmpty);
 }

@@ -396,31 +396,51 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
+    _tabController.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (_tabController.index != 0 && _selectedStudentIds.isNotEmpty) {
+      setState(() {
+        _selectedStudentIds.clear();
+      });
+    } else {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
 
   void _showAddPersonDialog({Map<String, dynamic>? editUser}) {
+    final state = AppStateScope.of(context);
     showDialog(
       context: context,
-      builder: (ctx) => _PersonFormDialog(
-        editUser: editUser,
-        departments: widget.departments,
-        allUsers: widget.users,
-        onSuccess: widget.onReload,
+      builder: (ctx) => AppStateScope(
+        state: state,
+        child: _PersonFormDialog(
+          editUser: editUser,
+          departments: widget.departments,
+          allUsers: widget.users,
+          onSuccess: widget.onReload,
+        ),
       ),
     );
   }
 
   void _showBulkAddDialog() {
+    final state = AppStateScope.of(context);
     showDialog(
       context: context,
-      builder: (ctx) => _BulkAddDialog(
-        onSuccess: widget.onReload,
+      builder: (ctx) => AppStateScope(
+        state: state,
+        child: _BulkAddDialog(
+          onSuccess: widget.onReload,
+        ),
       ),
     );
   }
@@ -651,8 +671,8 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
           ),
         ),
 
-        // Action banner for batch tutor assignment
-        if (_selectedStudentIds.isNotEmpty)
+        // Action banner for batch tutor assignment (only on Students tab)
+        if (_tabController.index == 0 && _selectedStudentIds.isNotEmpty)
           Container(
             color: AppTheme.primaryLight.withValues(alpha: 0.2),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1035,6 +1055,8 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
   }
 
   Future<void> _submit() async {
+    if (_busy) return;
+
     final normPhone = normalizeMobilePhone(_phoneCtrl.text);
     if (normPhone.length != 10) {
       setState(() => _errorMessage = 'Enter a valid 10-digit mobile number');
@@ -1054,7 +1076,10 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
       _errorMessage = null;
     });
 
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     final state = AppStateScope.of(context);
+
     try {
       final payload = <String, dynamic>{
         'name': _nameCtrl.text.trim(),
@@ -1084,8 +1109,8 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
       }
 
       if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
+        navigator.pop(true);
+        messenger.showSnackBar(
           SnackBar(
             backgroundColor: Colors.green.shade700,
             content: Row(
@@ -1097,26 +1122,29 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
             ),
           ),
         );
+        widget.onSuccess();
       }
-      widget.onSuccess();
     } on TimeoutException {
       if (mounted) {
         setState(() {
           _errorMessage = 'Request timed out after 15 seconds. Please try again.';
           _busy = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           const SnackBar(content: Text('Request timed out after 15s')),
         );
       }
     } on ApiException catch (e) {
       if (mounted) {
+        final msg = e.statusCode == 409
+            ? 'This phone number is already registered to another user'
+            : e.message;
         setState(() {
-          _errorMessage = e.message;
+          _errorMessage = msg;
           _busy = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
+        messenger.showSnackBar(
+          SnackBar(content: Text(msg)),
         );
       }
     } catch (e) {
@@ -1126,7 +1154,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
           _errorMessage = errText;
           _busy = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(content: Text(errText)),
         );
       }
@@ -1202,6 +1230,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
                     )
                   else
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue: _department,
                       decoration: const InputDecoration(labelText: 'Department *'),
                       items: widget.departments.map<DropdownMenuItem<String>>((d) {
@@ -1300,6 +1329,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: tutors.any((t) => t['id'] == _tutorId) ? _tutorId : null,
                     decoration: InputDecoration(
                       labelText: 'Assigned Tutor',

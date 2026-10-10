@@ -55,6 +55,12 @@ model User {
   devices   Device[]
   sessions  Session[]
   tutorOf   Student[] @relation("TutorStudents")
+  // inverse relations for department assignments
+  hodOf       Department? @relation("DeptHod")
+  deputyHodOf Department? @relation("DeptDeputyHod")
+  adminOf     Department? @relation("DeptAdmin")
+  // inverse for class tutoring
+  tutorClasses TutorClass[] @relation("TutorClasses")
   createdAt DateTime  @default(now())
 
   @@index([role, status])
@@ -70,6 +76,7 @@ model Student {
   year       Int?
   division   String?
   tutorId    String?
+  studentClasses StudentClass[] @relation("StudentClassStudent")
   tutor      User?            @relation("TutorStudents", fields: [tutorId], references: [id])
   outpasses  OutpassRequest[]
 
@@ -214,9 +221,19 @@ model Department {
   id        String     @id @default(uuid())
   code      String     @unique
   name      String
-  hodId     String?
+  hodId     String? @unique
+  deputyHodId String? @unique
+  adminId   String? @unique
   divisions Division[]
   createdAt DateTime   @default(now())
+
+  // relations
+  hod       User?      @relation("DeptHod", fields: [hodId], references: [id])
+  deputyHod User?      @relation("DeptDeputyHod", fields: [deputyHodId], references: [id])
+  admin     User?      @relation("DeptAdmin", fields: [adminId], references: [id])
+
+  // inverse for classes belonging to department
+  classes   Class[]
 }
 
 model Division {
@@ -229,10 +246,103 @@ model Division {
   @@unique([departmentId, name])
 }
 
+model AcademicYear {
+  id        String   @id @default(uuid())
+  year      Int      @unique
+  startDate DateTime
+  endDate   DateTime
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  semesters Semester[]
+}
+
+model Semester {
+  id             String   @id @default(uuid())
+  name           String   // e.g., "Fall", "Spring"
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  startDate      DateTime
+  endDate        DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  classes Class[]
+}
+
+model Class {
+  id          String   @id @default(uuid())
+  name        String   // e.g., "CS101"
+  departmentId String
+  department  Department @relation(fields: [departmentId], references: [id])
+  semesterId  String
+  semester    Semester @relation(fields: [semesterId], references: [id])
+  year        Int
+  division    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  studentAssignments StudentClass[]
+  tutorAssignments   TutorClass[]
+
+  @@unique([departmentId, semesterId, name])
+}
+
+model StudentClass {
+  id        String   @id @default(uuid())
+  studentId String
+  classId   String
+  assignedAt DateTime @default(now())
+  revokedAt DateTime?
+
+  student   Student @relation("StudentClassStudent", fields: [studentId], references: [userId])
+  class     Class   @relation(fields: [classId], references: [id])
+
+  @@unique([studentId, classId])
+  @@index([classId])
+}
+
+model TutorClass {
+  id        String   @id @default(uuid())
+  tutorId   String
+  classId   String
+  assignedAt DateTime @default(now())
+  revokedAt DateTime?
+
+  tutor     User @relation("TutorClasses", fields: [tutorId], references: [id])
+  class     Class @relation(fields: [classId], references: [id])
+
+  @@unique([tutorId, classId, assignedAt])
+  @@index([classId])
+}
+
+model RolePermission {
+  id          String @id @default(uuid())
+  role        Role
+  permission  String
+  createdAt   DateTime @default(now())
+
+  @@unique([role, permission])
+}
+
+model SecurityEvent {
+  id        String   @id @default(uuid())
+  actorId   String?
+  actorRole Role?
+  eventType String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([eventType])
+}
+
 model AppSetting {
   id        String   @id @default(uuid())
   key       String   @unique
   value     String
   updatedAt DateTime @updatedAt
 }
+
 

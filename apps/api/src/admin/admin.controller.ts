@@ -236,6 +236,9 @@ export class AdminController {
       replaceHod?: boolean;
     },
   ) {
+    // Log incoming request payload for debugging
+    // eslint-disable-next-line no-console
+    console.log('createUser DTO:', JSON.stringify(dto));
     if (!dto.name || !dto.name.trim()) {
       throw new BadRequestException('Name is required');
     }
@@ -790,7 +793,7 @@ export class AdminController {
 
   @Get('outpasses')
   async listOutpasses() {
-    return this.prisma.outpassRequest.findMany({
+    const outpasses = await this.prisma.outpassRequest.findMany({
       include: {
         student: {
           include: {
@@ -802,6 +805,10 @@ export class AdminController {
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
+    return outpasses.map((o) => ({
+      ...o,
+      lastTokenTs: Number(o.lastTokenTs),
+    }));
   }
 
   @Post('outpasses/:id/cancel')
@@ -831,7 +838,8 @@ export class AdminController {
       { reason: dto?.reason || 'Cancelled by Admin' },
     );
 
-    return updated;
+    // Serialize BigInt fields before returning
+    return { ...updated, lastTokenTs: Number(updated.lastTokenTs) };
   }
 
   @Get('settings')

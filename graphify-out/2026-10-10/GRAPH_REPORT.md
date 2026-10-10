@@ -1,22 +1,22 @@
-# Graph Report - College-app  (2026-10-09)
+# Graph Report - College-app  (2026-10-10)
 
 ## Corpus Check
-- 93 files · ~43,906 words
+- 97 files · ~48,990 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 55 file(s) not represented in the graph (top: (none) 8, .xcconfig 8, .xml 7)
 
 ## Summary
-- 1022 nodes · 1602 edges · 60 communities (39 shown, 21 thin omitted)
-- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 56 edges (avg confidence: 0.85)
+- 1078 nodes · 1693 edges · 54 communities (37 shown, 17 thin omitted)
+- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 60 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `cf3ce8db`
+- Built from commit: `9f70f8f0`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- auth.decorator.ts
+- phone_normalization_and_router_test.dart
 - OutpassService
 - GateService
 - AppDelegate
@@ -36,12 +36,10 @@
 - compilerOptions
 - win32_window.cpp
 - guard_screen.dart
-- NotificationsService
 - main.dart
 - approver_screen.dart
 - dependencies
 - State
-- devDependencies
 - manifest.json
 - @nestjs/common
 - utils.cpp
@@ -51,7 +49,6 @@
 - nest-cli.json
 - device_key_persistence_test.dart
 - AdminController
-- auth.service.ts
 - MainActivity.kt
 - CCE Outpass — MVP
 - scripts
@@ -61,52 +58,49 @@
 - cce_outpass
 - LaunchImage.imageset/README.md
 - decisions.md
-- @prisma/client
 - StatelessWidget
 - .MessageHandler
 - FlutterWindow
 - Point
-- AppState
 - main.ts
 - ApiException
-- FakeSecureStorage
 
 ## God Nodes (most connected - your core abstractions)
-1. `@nestjs/common` - 29 edges
-2. `PrismaService` - 26 edges
-3. `AdminController` - 22 edges
+1. `@nestjs/common` - 30 edges
+2. `AdminController` - 28 edges
+3. `PrismaService` - 27 edges
 4. `Win32Window` - 21 edges
 5. `OutpassService` - 20 edges
-6. `compilerOptions` - 18 edges
-7. `AuthService` - 17 edges
-8. `Auth()` - 17 edges
-9. `AuditService` - 16 edges
+6. `AuthService` - 18 edges
+7. `compilerOptions` - 18 edges
+8. `AuditService` - 17 edges
+9. `Auth()` - 17 edges
 10. `AuthUser` - 15 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `3. Phone Number Normalization Standard` --references--> `normalizeMobile()`  [INFERRED]
+  ONBOARDING.md → apps/api/src/auth/dto.ts
+- `Feature Completeness Analysis` --references--> `normalizeMobile()`  [INFERRED]
+  ONBOARDING.md → apps/api/src/auth/dto.ts
 - `wWinMain()` --calls--> `CreateAndAttachConsole()`  [INFERRED]
   apps/mobile/windows/runner/main.cpp → apps/mobile/windows/runner/utils.cpp
 - `AdminController` --references--> `Auth()`  [EXTRACTED]
   apps/api/src/admin/admin.controller.ts → apps/api/src/common/auth.decorator.ts
 - `GateController` --references--> `Auth()`  [EXTRACTED]
   apps/api/src/gate/gate.controller.ts → apps/api/src/common/auth.decorator.ts
-- `NotificationsController` --references--> `Auth()`  [EXTRACTED]
-  apps/api/src/notifications/notifications.controller.ts → apps/api/src/common/auth.decorator.ts
-- `my_application_activate()` --calls--> `fl_register_plugins()`  [INFERRED]
-  apps/mobile/linux/runner/my_application.cc → apps/mobile/linux/flutter/generated_plugin_registrant.cc
 
 ## Import Cycles
 - None detected.
 
-## Communities (60 total, 21 thin omitted)
+## Communities (54 total, 17 thin omitted)
 
-### Community 0 - "auth.decorator.ts"
-Cohesion: 0.18
-Nodes (6): Roles(), ROLES_KEY, JwtAuthGuard, RolesGuard, @nestjs/core, @nestjs/jwt
+### Community 0 - "phone_normalization_and_router_test.dart"
+Cohesion: 0.10
+Nodes (12): adminGetAuditLog, adminGetDepartments, adminGetOutpasses, adminGetSettings, adminGetUsers, delete, guardScans, main (+4 more)
 
 ### Community 1 - "OutpassService"
 Cohesion: 0.07
-Nodes (9): Auth(), AuthUser, ExpiryService, ApprovalsController, CancelDto, CreateOutpassDto, DecisionDto, OutpassController (+1 more)
+Nodes (8): AuthUser, ExpiryService, CancelDto, CreateOutpassDto, DecisionDto, OutpassController, OutpassService, class-transformer
 
 ### Community 2 - "GateService"
 Cohesion: 0.08
@@ -118,7 +112,7 @@ Nodes (15): AppDelegate, SceneDelegate, RunnerTests, RegisterGeneratedPlugins(),
 
 ### Community 4 - "admin_screen.dart"
 Cohesion: 0.03
-Nodes (61): allUsers, _auditLogs, build, _buildRoleList, _busy, _cancelPass, _catCtrl, _collegeCtrl (+53 more)
+Nodes (70): allUsers, _auditLogs, build, _buildRoleList, _busy, _cancelPass, _catCtrl, _collegeCtrl (+62 more)
 
 ### Community 5 - "AuthService"
 Cohesion: 0.11
@@ -137,24 +131,24 @@ Cohesion: 0.08
 Nodes (14): fl_register_plugins(), main(), first_frame_cb(), my_application_activate(), my_application_class_init(), my_application_dispose(), my_application_init(), my_application_local_command_line() (+6 more)
 
 ### Community 9 - "gate.e2e-spec.ts"
-Cohesion: 0.24
-Nodes (11): test, AppModule, T, login(), newKeyPair(), signToken(), useTestFirebaseAuth(), uuid() (+3 more)
+Cohesion: 0.31
+Nodes (9): T, login(), newKeyPair(), signToken(), useTestFirebaseAuth(), uuid(), T, @nestjs/testing (+1 more)
 
 ### Community 10 - "api_client.dart"
-Cohesion: 0.05
-Nodes (41): accessToken, adminAddOrUpdateDepartment, adminAddUser, adminAssignTutors, adminBulkAddUsers, adminCancelOutpass, adminDeleteDepartment, adminDeleteUser (+33 more)
+Cohesion: 0.04
+Nodes (46): accessToken, adminAddDivision, adminAddOrUpdateDepartment, adminAddUser, adminAssignTutors, adminBulkAddUsers, adminCancelOutpass, adminDeleteDepartment (+38 more)
 
 ### Community 11 - "app_state.dart"
-Cohesion: 0.07
-Nodes (24): ApiClient, api, deviceKeys, isAdmin, isGuard, isHod, isStudent, isTutor (+16 more)
+Cohesion: 0.05
+Nodes (30): ApiClient, api, AppState, AppStateScope, deviceKeys, isAdmin, isGuard, isHod (+22 more)
 
 ### Community 12 - "app_theme.dart"
 Cohesion: 0.04
-Nodes (40): action, adminAccent, AppTheme, borderLight, build, cardBg, cardPadding, guardAccent (+32 more)
+Nodes (42): action, adminAccent, AppTheme, borderLight, build, cardBg, cardPadding, cardRadius (+34 more)
 
 ### Community 13 - "CCE Outpass — Comprehensive Project Onboarding Report"
 Cohesion: 0.05
-Nodes (38): 1. PROJECT OVERVIEW, 1. Start PostgreSQL with Docker, 2. Run Database Migrations and Seed Admin User, 2. TECH STACK, 3. FOLDER STRUCTURE, 3. Start the NestJS API, 4. ARCHITECTURE AND DATA FLOW, 4. Start the Flutter Mobile / Web App (+30 more)
+Nodes (43): 1. Academic Hierarchy in Database, 1. PROJECT OVERVIEW, 1. Start PostgreSQL with Docker, 2. Role-Specific Registration Rules, 2. Run Database Migrations and Seed Admin User, 2. TECH STACK, 3. FOLDER STRUCTURE, 3. Phone Number Normalization Standard (+35 more)
 
 ### Community 14 - "login_screen.dart"
 Cohesion: 0.13
@@ -166,7 +160,7 @@ Nodes (15): _bigIntTo32Bytes, buildToken, _bytesToBigInt, currentStep, DeviceKey
 
 ### Community 16 - "package.json"
 Cohesion: 0.10
-Nodes (20): name, prisma, seed, private, version, class-transformer, firebase-admin, jest (+12 more)
+Nodes (20): name, prisma, seed, private, version, embedded-postgres, firebase-admin, jest (+12 more)
 
 ### Community 17 - "compilerOptions"
 Cohesion: 0.11
@@ -185,24 +179,20 @@ Cohesion: 0.12
 Nodes (14): ApproverHome, _ApproverHomeState, _askReason, build, createState, _decide, dispose, _error (+6 more)
 
 ### Community 23 - "dependencies"
-Cohesion: 0.14
-Nodes (14): dependencies, class-transformer, class-validator, firebase-admin, @nestjs/common, @nestjs/config, @nestjs/core, @nestjs/jwt (+6 more)
+Cohesion: 0.07
+Nodes (28): dependencies, class-transformer, class-validator, firebase-admin, @nestjs/common, @nestjs/config, @nestjs/core, @nestjs/jwt (+20 more)
 
 ### Community 24 - "State"
 Cohesion: 0.18
 Nodes (12): AdminHome, _AdminHomeState, _AdminOutpassMonitorTab, _AdminOutpassMonitorTabState, _AdminPeopleTab, _AdminPeopleTabState, _AdminSettingsTab, _AdminSettingsTabState (+4 more)
-
-### Community 25 - "devDependencies"
-Cohesion: 0.15
-Nodes (13): devDependencies, jest, @nestjs/cli, @nestjs/testing, prisma, supertest, ts-jest, ts-node (+5 more)
 
 ### Community 26 - "manifest.json"
 Cohesion: 0.18
 Nodes (10): background_color, description, display, icons, name, orientation, prefer_related_applications, short_name (+2 more)
 
 ### Community 27 - "@nestjs/common"
-Cohesion: 0.16
-Nodes (11): AdminModule, AuditService, GateModule, PENDING, RESULT_MESSAGE, NotificationsModule, OutpassModule, ACTIVE_STATUSES (+3 more)
+Cohesion: 0.05
+Nodes (27): prisma, AdminModule, AuditService, AuthModule, FirebaseAuthService, TempAuthConfig, Auth(), Roles() (+19 more)
 
 ### Community 28 - "utils.cpp"
 Cohesion: 0.12
@@ -213,8 +203,8 @@ Cohesion: 0.22
 Nodes (9): jest, collectCoverageFrom, coverageDirectory, moduleFileExtensions, rootDir, testEnvironment, testRegex, transform (+1 more)
 
 ### Community 30 - "daemon.cjs"
-Cohesion: 0.22
-Nodes (5): child, fs, out, path, { spawn }
+Cohesion: 0.17
+Nodes (6): child, fs, out, path, { spawn }, path
 
 ### Community 32 - "nest-cli.json"
 Cohesion: 0.33
@@ -224,17 +214,13 @@ Nodes (5): collection, compilerOptions, deleteOutDir, $schema, sourceRoot
 Cohesion: 0.13
 Nodes (9): containsKey, _data, delete, main, noSuchMethod, read, throwOnRead, throwOnWrite (+1 more)
 
-### Community 35 - "auth.service.ts"
-Cohesion: 0.16
-Nodes (4): AuthModule, FirebaseAuthService, TempAuthConfig, @nestjs/config
-
 ### Community 37 - "CCE Outpass — MVP"
 Cohesion: 0.25
 Nodes (7): CCE Outpass — MVP, Initial Admin Account, Layout, Phone sign-in setup, Quick start, Security posture (MVP), Tests
 
 ### Community 39 - "scripts"
-Cohesion: 0.22
-Nodes (9): scripts, build, prisma:deploy, prisma:generate, prisma:migrate, seed, start, start:dev (+1 more)
+Cohesion: 0.20
+Nodes (10): scripts, build, prisma:deploy, prisma:generate, prisma:migrate, seed, start, start:dev (+2 more)
 
 ### Community 45 - "CCE Outpass — PRD Summary (MVP scope)"
 Cohesion: 0.33
@@ -257,24 +243,24 @@ Cohesion: 0.21
 Nodes (6): Point, x, y, Size, height, width
 
 ## Knowledge Gaps
-- **312 isolated node(s):** `@nestjs/platform-express`, `rxjs`, `@nestjs/cli`, `@types/express`, `@types/jest` (+307 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 602 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **21 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **343 isolated node(s):** `@nestjs/platform-express`, `rxjs`, `@nestjs/cli`, `@types/express`, `@types/jest` (+338 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 641 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **17 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `@nestjs/common` connect `@nestjs/common` to `auth.decorator.ts`, `OutpassService`, `GateService`, `auth.service.ts`, `AuthService`, `gate.e2e-spec.ts`, `package.json`, `NotificationsService`, `main.ts`?**
-  _High betweenness centrality (0.036) - this node is a cross-community bridge._
+- **Why does `@nestjs/common` connect `@nestjs/common` to `package.json`, `main.ts`, `AuthService`, `gate.e2e-spec.ts`?**
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
 - **What connects `@nestjs/platform-express`, `rxjs`, `@nestjs/cli` to the rest of the system?**
-  _312 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `OutpassService` be split into smaller, more focused modules?**
-  _Cohesion score 0.07456140350877193 - nodes in this community are weakly interconnected._
-- **Why does `AdminController` connect `AdminController` to `OutpassService`, `@nestjs/common`?**
+  _343 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `phone_normalization_and_router_test.dart` be split into smaller, more focused modules?**
+  _Cohesion score 0.1 - nodes in this community are weakly interconnected._
+- **Why does `normalizeMobile()` connect `AuthService` to `AdminController`, `@nestjs/common`, `CCE Outpass — Comprehensive Project Onboarding Report`?**
   _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **Should `OutpassService` be split into smaller, more focused modules?**
+  _Cohesion score 0.07329462989840348 - nodes in this community are weakly interconnected._
+- **Why does `Auth()` connect `@nestjs/common` to `OutpassService`, `AdminController`, `GateService`, `AuthService`?**
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
 - **Should `GateService` be split into smaller, more focused modules?**
-  _Cohesion score 0.08130081300813008 - nodes in this community are weakly interconnected._
-- **Why does `Win32Window` connect `Win32Window` to `win32_window.cpp`, `.MessageHandler`, `FlutterWindow`, `Point`, `utils.cpp`?**
-  _High betweenness centrality (0.022) - this node is a cross-community bridge._
-- **Should `AppDelegate` be split into smaller, more focused modules?**
-  _Cohesion score 0.05975609756097561 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07926829268292683 - nodes in this community are weakly interconnected._
