@@ -25,10 +25,13 @@ The system serves 5 distinct user groups:
 | Feature Area | Status | Evidence in Codebase | Notes / Missing Items |
 | :--- | :---: | :--- | :--- |
 | **Temporary Auth Config** | ✅ Finished | `apps/mobile/lib/config/temp_auth_config.dart`, `apps/api/src/auth/temp-auth.config.ts` | Single source of truth: `ADMIN_PHONE = 8921578838`, `TEMP_OTP = 123456`. |
-| **Admin Role & Management UI** | ✅ Finished | `apps/mobile/lib/admin_screen.dart`, `apps/api/src/admin/admin.controller.ts` | Dashboard metrics, People tabs (CRUD + bulk CSV), Departments, Outpass Monitor, Settings. |
+| **Academic Structure & Seed** | ✅ Finished | `schema.prisma`, `seed.ts`, `apps/api/src/admin/admin.controller.ts` | Departments (CSE, CSDS, CSBS, EC, EEE, ME, CE, VLSI), Divisions model per department, Years 1-4. Idempotent seed. |
+| **Role-Specific Registration** | ✅ Finished | `apps/mobile/lib/admin_screen.dart`, `apps/api/src/admin/admin.controller.ts` | Dynamic forms per role (Student, Tutor, HOD, Guard, Admin), dependent dropdowns, 1 HOD per dept with replace option, backend mirror validation. |
+| **Phone Number Normalization** | ✅ Finished | `api_client.dart` (`normalizeMobilePhone`), `auth/dto.ts` (`normalizeMobile`) | Single standard: 10 digits across all screens, registration, editing, duplicate checks, and login. Strips `+91`, `91`, dashes, spaces. |
+| **Admin Role & Management UI** | ✅ Finished | `apps/mobile/lib/admin_screen.dart`, `apps/api/src/admin/admin.controller.ts` | Dashboard metrics, People tabs (CRUD + role-specific forms + 15s timeout), Departments & Divisions manager, Outpass Monitor, Settings. |
 | **Unified UI Design System** | ✅ Finished | `apps/mobile/lib/theme/app_theme.dart` | Clean typography, role color accents, semantic status chips, empty states, hero QR countdown ring. |
 | **Student Outpass Creation** | ✅ Finished | `apps/mobile/lib/student_screen.dart` (`RequestFormScreen`), `apps/api/src/outpass/outpass.service.ts` | Start/end datetime pickers, purpose categories, emergency flag, validation against overlaps. |
-| **Tutor & HOD Approvals** | ✅ Finished | `approver_screen.dart`, `approvals.controller.ts`, `outpass.service.ts` | Sequential state transitions (`PENDING_TUTOR` -> `PENDING_HOD` -> `APPROVED`), mandatory rejection comments. |
+| **Tutor & HOD Approvals** | ✅ Finished | `approver_screen.dart`, `approvals.controller.ts`, `outpass.service.ts` | Department/year/division scoping for tutors; department scoping for HODs. Sequential state transitions (`PENDING_TUTOR` -> `PENDING_HOD` -> `APPROVED`). |
 | **Rotating Dynamic QR Code** | ✅ Finished | `qr_token.dart`, `apps/api/src/gate/token-verify.ts`, `student_screen.dart` | ECDSA P-256 dynamic token with animated countdown ring and copy button for guards. |
 | **Guard Gate Verification** | ✅ Finished | `guard_screen.dart`, `apps/api/src/gate/gate.service.ts` | Camera scanning via `mobile_scanner`, manual entry fallback, single-use check, min 10-min dwell check. |
 | **Audit Logging** | ✅ Finished | `apps/api/src/audit/audit.service.ts` | Append-only SHA-256 hash-chained audit ledger (`AuditLog` table). |
@@ -343,28 +346,71 @@ flutter run -d windows --dart-define=API_BASE_URL=http://localhost:3000/v1
 
 ---
 
+### Academic Structure & Role Registration Architecture
+
+#### 1. Academic Hierarchy in Database
+- **Departments:** Stored in the `Department` model (`CSE`, `CSDS`, `CSBS`, `EC`, `EEE`, `ME`, `CE`, `VLSI`).
+- **Divisions:** Dynamic per-department model (`Division` with `departmentId`, `code`, `name`). CSE is initialized with divisions `A`, `B`, `C`, `D`. Other departments initially have no divisions. Divisions can be added or deleted by the Admin from the **Departments** tab.
+- **Years:** Stored as integers `1` to `4` (displayed as `1st Year`, `2nd Year`, `3rd Year`, `4th Year`).
+- **Idempotency:** `prisma/seed.ts` creates departments, divisions, and default admin without duplicating existing records.
+- **Integrity Constraints:**
+  - Deleting a department that has associated people is strictly blocked (HTTP 400).
+  - Deleting a division assigned to active students or tutors is strictly blocked (HTTP 400).
+
+#### 2. Role-Specific Registration Rules
+- **STUDENT:** Name, Phone (10 digits), Department, Year (1-4), Division (visible and required ONLY if the department has divisions), Assigned Tutor (filtered to tutors of the exact same Department, Year, and Division).
+- **TUTOR:** Name, Phone (10 digits), Department, Year (1-4), Division (only if the department has divisions).
+- **HOD:** Name, Phone (10 digits), Department only. Strictly one active HOD per department. If an active HOD exists, the admin is warned (`"<Dept> already has a HOD: <Name>"`) and given the option to replace them.
+- **SECURITY GUARD:** Name, Phone (10 digits) only.
+- **ADMIN:** Name, Phone (10 digits) only.
+- **Editing Persons:** All fields are editable, including role. Changing roles automatically clears inapplicable fields.
+- **Dependent Dropdowns:** Changing Department resets Division and Tutor; Division dropdown displays only divisions belonging to that department.
+- **Button State:** "Register Person" / "Save Changes" is disabled until all required fields for the selected role are valid.
+
+#### 3. Phone Number Normalization Standard
+- **Format:** Strict 10-digit numeric string across all screens and services.
+- **Rule:** Strips leading `+91`, `91`, parentheses, dashes, and whitespace (`normalizeMobilePhone` in Flutter, `normalizeMobile` in NestJS).
+- **Uniqueness:** Phone numbers must be globally unique across all roles in the system.
+- **Login Compatibility:** Any phone registered by the Admin logs in with `TEMP_OTP = 123456` and routes directly to the correct role dashboard without fallback to Student.
+
+#### 4. Root Cause of Earlier "Saving..." Bug & Resolution
+- **Root Cause:**
+  1. The `_save()` async method in `_PersonFormDialog` lacked a `finally` block to reset `_busy = false`, leaving the button in a permanent loading spinner whenever the server returned an error.
+  2. HTTP requests did not have a timeout, so dropped connections or network lag caused the modal to freeze indefinitely.
+  3. The dialog was not dismissed prior to triggering the parent list reload, causing race conditions in UI state.
+  4. Stateful widgets (`AdminHome` and `GuardHome`) invoked async InheritedWidget methods directly inside `initState()` before the element was mounted, triggering Flutter framework assertion errors.
+- **Resolution:**
+  - Added a 15-second timeout (`.timeout(const Duration(seconds: 15))`) with proper `try / catch / finally` resetting `_busy = false`.
+  - Caught errors and surfaced the backend's explicit error message in a SnackBar.
+  - Closed the dialog immediately on success (`Navigator.of(context).pop(true)`) and refreshed the list in the parent widget.
+  - Deferred initial API calls in `initState()` via `WidgetsBinding.instance.addPostFrameCallback`.
+
+---
+
 ### Step-by-Step Testing Guide: Role Allotment & Full Lifecycle
 
 The app always begins at the Login screen. No auto-login or role switching without signing in.
 
-#### Step 1: Admin Setup
+#### Step 1: Admin Setup & Academic Management
 1. Open the app (`http://localhost:8080`).
 2. Log in with the seeded administrator phone:
    - Mobile: `8921578838`
    - Enter OTP: `123456`
    - Click **Verify & Sign In** -> Admin Console opens.
 3. In the **Departments** tab:
-   - Confirm or add departments (e.g., `CSE` — Computer Science and Engineering).
+   - Verify seeded departments: `CSE`, `CSDS`, `CSBS`, `EC`, `EEE`, `ME`, `CE`, `VLSI`.
+   - Verify CSE displays divisions `A`, `B`, `C`, `D`.
+   - Test adding a new division (e.g. click `+ Add Division` on `EC` and add `A`).
 4. In the **People** tab:
    - Click **Add Person** to create a **Tutor**:
-     * Name: `Dr. Anand Kumar`, Phone: `9000000001`, Role: `Tutor`, Dept: `CSE`.
+     * Name: `Dr. Anand Kumar`, Phone: `9000000001`, Role: `Tutor`, Dept: `CSE`, Year: `3rd Year`, Division: `A`.
    - Click **Add Person** to create an **HOD**:
      * Name: `Dr. Priya Menon`, Phone: `9000000002`, Role: `HOD`, Dept: `CSE`.
    - Click **Add Person** to create a **Security Guard**:
-     * Name: `Suresh Guard`, Phone: `9000000090`, Role: `Security Guard`, Dept: `CSE`.
+     * Name: `Suresh Guard`, Phone: `9000000090`, Role: `Security Guard`.
    - Click **Add Person** to create a **Student**:
-     * Name: `Ananya S`, Phone: `9074121510`, Role: `Student`, Dept: `CSE`, Semester: `6`, Assigned Tutor: `Dr. Anand Kumar`.
-5. *(Optional)* In **Departments**, edit `CSE` to assign `Dr. Priya Menon` as HOD.
+     * Name: `Ananya S`, Phone: `9074121510`, Role: `Student`, Dept: `CSE`, Year: `3rd Year`, Division: `A`, Assigned Tutor: `Dr. Anand Kumar`.
+5. *(HOD Uniqueness Test)* Try registering a second HOD for `CSE` -> System warns that `CSE already has a HOD: Dr. Priya Menon`.
 6. Click the logout icon in the top right to sign out.
 
 #### Step 2: Student Creates an Outpass Request
