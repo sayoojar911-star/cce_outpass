@@ -182,9 +182,13 @@ export class AdminController {
       }
 
       let tutorId: string | null = null;
-      if (role === 'STUDENT' && dto.tutorId) {
+      const cleanTutorId =
+        typeof dto.tutorId === 'string' && dto.tutorId.trim().length > 0
+          ? dto.tutorId.trim()
+          : null;
+      if (role === 'STUDENT' && cleanTutorId) {
         const tutor = await this.prisma.user.findFirst({
-          where: { id: dto.tutorId, role: 'TUTOR', status: 'ACTIVE' },
+          where: { id: cleanTutorId, role: 'TUTOR', status: 'ACTIVE' },
         });
         if (!tutor) {
           throw new BadRequestException('Selected tutor is not active or not a TUTOR');

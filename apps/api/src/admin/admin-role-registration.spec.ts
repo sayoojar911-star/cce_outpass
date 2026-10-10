@@ -27,9 +27,9 @@ describe('Admin Role Registration & Login E2E', () => {
     authService = new AuthService(prisma, jwtService, audit, firebaseMock);
 
     // Clean up any old test users
-    await prisma.approval.deleteMany({});
-    await prisma.outpassRequest.deleteMany({});
-    await prisma.student.deleteMany({});
+    await prisma.student.deleteMany({
+      where: { user: { mobile: { startsWith: '91000000' } } },
+    });
     await prisma.session.deleteMany({});
     await prisma.device.deleteMany({});
     await prisma.user.deleteMany({
@@ -38,10 +38,17 @@ describe('Admin Role Registration & Login E2E', () => {
       },
     });
 
-    // Ensure departments exist
+    await prisma.department.updateMany({
+      where: { code: 'CSE' },
+      data: { hodId: null },
+    });
+    await prisma.user.updateMany({
+      where: { department: 'CSE', role: 'HOD' },
+      data: { status: 'INACTIVE' },
+    });
     await prisma.department.upsert({
       where: { code: 'CSE' },
-      update: {},
+      update: { hodId: null },
       create: { code: 'CSE', name: 'Computer Science and Engineering' },
     });
     await prisma.department.upsert({
@@ -68,7 +75,9 @@ describe('Admin Role Registration & Login E2E', () => {
   });
 
   afterAll(async () => {
-    await prisma.student.deleteMany({});
+    await prisma.student.deleteMany({
+      where: { user: { mobile: { startsWith: '91000000' } } },
+    });
     await prisma.session.deleteMany({});
     await prisma.device.deleteMany({});
     await prisma.user.deleteMany({

@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'app_state.dart';
 import 'qr_token.dart';
 import 'theme/app_theme.dart';
+import 'async_action_helper.dart';
 
 class StudentHome extends StatefulWidget {
   const StudentHome({super.key});
@@ -273,12 +274,14 @@ class _StudentHomeState extends State<StudentHome> {
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
                       onPressed: () async {
-                        try {
-                          await _state.api.cancelOutpass(active['id'] as String);
-                          _refresh();
-                        } catch (e) {
-                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-                        }
+                        await AsyncActionHelper.run(
+                          context,
+                          action: () async {
+                            await _state.api.cancelOutpass(active['id'] as String);
+                            _refresh();
+                          },
+                          successMessage: 'Outpass request cancelled',
+                        );
                       },
                       icon: const Icon(Icons.cancel_outlined, size: 18),
                       label: const Text('Cancel Outpass Request'),
@@ -361,21 +364,27 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
 
   Future<void> _submit() async {
     setState(() { _busy = true; _error = null; });
-    try {
-      await _state.api.createOutpass(
-        requestedExitAt: _exit.toIso8601String(),
-        expectedReturnAt: _ret.toIso8601String(),
-        destination: _destination.text.trim(),
-        purposeCategory: _purposeCategory,
-        purposeText: _purposeText.text.trim().isEmpty ? null : _purposeText.text.trim(),
-        type: _type,
-      );
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    final ok = await AsyncActionHelper.run(
+      context,
+      action: () async {
+        await _state.api.createOutpass(
+          requestedExitAt: _exit.toIso8601String(),
+          expectedReturnAt: _ret.toIso8601String(),
+          destination: _destination.text.trim(),
+          purposeCategory: _purposeCategory,
+          purposeText: _purposeText.text.trim().isEmpty ? null : _purposeText.text.trim(),
+          type: _type,
+        );
+      },
+      successMessage: 'Outpass request submitted successfully',
+      onError: (err) {
+        if (mounted) setState(() => _error = err);
+      },
+      onFinally: () {
+        if (mounted) setState(() => _busy = false);
+      },
+    );
+    if (ok && mounted) Navigator.of(context).pop();
   }
 
   Future<void> _pick(DateTime initial, bool isExit) async {

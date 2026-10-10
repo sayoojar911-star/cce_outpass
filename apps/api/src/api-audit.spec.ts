@@ -36,9 +36,9 @@ describe('Phase 3: Backend API Audit & Health Check', () => {
 
     // Clean up test users
     await prisma.approval.deleteMany({});
-    await prisma.outpassRequest.deleteMany({});
-    await prisma.student.deleteMany({});
-    await prisma.session.deleteMany({});
+    await prisma.student.deleteMany({
+      where: { user: { mobile: { in: ['9999900001', '9999900002', '9999900003'] } } },
+    });
     await prisma.device.deleteMany({});
     await prisma.user.deleteMany({
       where: {
@@ -48,10 +48,9 @@ describe('Phase 3: Backend API Audit & Health Check', () => {
   });
 
   afterAll(async () => {
-    await prisma.approval.deleteMany({});
-    await prisma.outpassRequest.deleteMany({});
-    await prisma.student.deleteMany({});
-    await prisma.session.deleteMany({});
+    await prisma.student.deleteMany({
+      where: { user: { mobile: { in: ['9999900001', '9999900002', '9999900003'] } } },
+    });
     await prisma.device.deleteMany({});
     await prisma.user.deleteMany({
       where: {

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'app_state.dart';
 import 'api_client.dart';
+import 'async_action_helper.dart';
 
 /// Phone + OTP login screen.
 /// OTP verification is handled entirely server-side (the backend checks
@@ -64,24 +65,24 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
 
-    try {
-      await _state.sendOtp(mobile);
-      if (mounted) {
-        setState(() {
-          _otpSent = true;
-        });
-        _startCooldown();
-      }
-    } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
+    final ok = await AsyncActionHelper.run(
+      context,
+      action: () async {
+        await _state.sendOtp(mobile);
+      },
+      onError: (err) {
+        if (mounted) setState(() => _error = err);
+      },
+      onFinally: () {
+        if (mounted) setState(() => _busy = false);
+      },
+    );
+
+    if (ok && mounted) {
+      setState(() {
+        _otpSent = true;
+      });
+      _startCooldown();
     }
   }
 
@@ -98,19 +99,18 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     final mobile = _normalizedMobile();
 
-    try {
-      await _state.verifyOtpAndLogin(mobile, code);
-    } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    await AsyncActionHelper.run(
+      context,
+      action: () async {
+        await _state.verifyOtpAndLogin(mobile, code);
+      },
+      onError: (err) {
+        if (mounted) setState(() => _error = err);
+      },
+      onFinally: () {
+        if (mounted) setState(() => _busy = false);
+      },
+    );
   }
 
   @override

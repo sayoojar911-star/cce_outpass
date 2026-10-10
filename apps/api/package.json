@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "nest build",
+    "lint": "tsc --noEmit",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "test": "jest",

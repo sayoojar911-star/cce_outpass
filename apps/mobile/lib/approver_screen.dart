@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'api_client.dart';
 import 'app_state.dart';
 import 'theme/app_theme.dart';
+import 'async_action_helper.dart';
 
 /// Refreshed Approver dashboard (Tutor & HOD) using AppTheme and role accents.
 class ApproverHome extends StatefulWidget {
@@ -51,30 +51,17 @@ class _ApproverHomeState extends State<ApproverHome> {
     String? comment;
     if (decision == 'REJECTED') {
       comment = await _askReason();
-      if (comment == null) return;
+      if (comment == null || !mounted) return;
     }
-    try {
-      await _state.api.decide(o['id'] as String, decision, comment: comment);
-      await _refresh();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: decision == 'APPROVED' ? Colors.green.shade700 : Colors.red.shade700,
-            content: Row(
-              children: [
-                Icon(decision == 'APPROVED' ? Icons.check_circle : Icons.cancel, color: Colors.white, size: 20),
-                const SizedBox(width: 8),
-                Text('Outpass ${o['displayId']} ${decision.toLowerCase()}'),
-              ],
-            ),
-          ),
-        );
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    }
+    if (!mounted) return;
+    await AsyncActionHelper.run(
+      context,
+      action: () async {
+        await _state.api.decide(o['id'] as String, decision, comment: comment);
+        await _refresh();
+      },
+      successMessage: 'Outpass ${o['displayId']} ${decision.toLowerCase()}',
+    );
   }
 
   Future<String?> _askReason() {

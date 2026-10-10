@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'app_state.dart';
 import 'theme/app_theme.dart';
+import 'async_action_helper.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -486,19 +487,21 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
             FilledButton(
               onPressed: () async {
                 final state = AppStateScope.of(context);
-                try {
-                  final count = await state.api.adminAssignTutors(studentIds, chosenTutorId);
-                  if (!mounted) return;
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  setState(() => _selectedStudentIds.clear());
-                  widget.onReload();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Assigned tutor for $count student(s)')),
-                  );
-                } catch (e) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-                }
+                final messenger = ScaffoldMessenger.of(context);
+                await AsyncActionHelper.run(
+                  context,
+                  action: () async {
+                    final count = await state.api.adminAssignTutors(studentIds, chosenTutorId);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    if (mounted) setState(() => _selectedStudentIds.clear());
+                    widget.onReload();
+                    if (mounted) {
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('Assigned tutor for $count student(s)')),
+                      );
+                    }
+                  },
+                );
               },
               child: const Text('Assign'),
             ),
@@ -528,12 +531,14 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
     if (confirmed == true) {
       if (!mounted) return;
       final state = AppStateScope.of(context);
-      try {
-        await state.api.adminDeleteUser(user['id']);
-        widget.onReload();
-      } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
+      await AsyncActionHelper.run(
+        context,
+        action: () async {
+          await state.api.adminDeleteUser(user['id']);
+          widget.onReload();
+        },
+        successMessage: 'User ${user['name']} deleted',
+      );
     }
   }
 
@@ -559,12 +564,14 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
       if (!mounted) return;
       final state = AppStateScope.of(context);
       final newStatus = user['status'] == 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
-      try {
-        await state.api.adminUpdateUser(user['id'], {'status': newStatus});
-        widget.onReload();
-      } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
+      await AsyncActionHelper.run(
+        context,
+        action: () async {
+          await state.api.adminUpdateUser(user['id'], {'status': newStatus});
+          widget.onReload();
+        },
+        successMessage: newStatus == 'ACTIVE' ? 'User reactivated' : 'User deactivated',
+      );
     }
   }
 
@@ -659,6 +666,11 @@ class _AdminPeopleTabState extends State<_AdminPeopleTab> with SingleTickerProvi
                 labelColor: AppTheme.adminAccent,
                 unselectedLabelColor: AppTheme.textMuted,
                 indicatorColor: AppTheme.adminAccent,
+                onTap: (index) {
+                  if (index != 0 && _selectedStudentIds.isNotEmpty) {
+                    setState(() => _selectedStudentIds.clear());
+                  }
+                },
                 tabs: [
                   Tab(text: 'Students (${activeUsers.where((u) => u['role'] == 'STUDENT').length})'),
                   Tab(text: 'Tutors (${activeUsers.where((u) => u['role'] == 'TUTOR').length})'),
@@ -1091,7 +1103,7 @@ class _PersonFormDialogState extends State<_PersonFormDialog> {
           if (_currentDivisionNames.isNotEmpty) 'division': _division,
         },
         if (_role == 'STUDENT') ...{
-          if (_tutorId != null) 'tutorId': _tutorId,
+          'tutorId': (_tutorId != null && _tutorId!.trim().isNotEmpty) ? _tutorId!.trim() : null,
           if (_regNoCtrl.text.trim().isNotEmpty)
             'registerNo': _regNoCtrl.text.trim(),
         },
@@ -1467,20 +1479,22 @@ class _BulkAddDialogState extends State<_BulkAddDialog> {
     if (_parsedValid.isEmpty) return;
     setState(() => _busy = true);
     final state = AppStateScope.of(context);
-    try {
-      final count = await state.api.adminBulkAddUsers(_parsedValid);
-      widget.onSuccess();
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Successfully registered $count users from CSV')),
-        );
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    await AsyncActionHelper.run(
+      context,
+      action: () async {
+        final count = await state.api.adminBulkAddUsers(_parsedValid);
+        widget.onSuccess();
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Successfully registered $count users from CSV')),
+          );
+        }
+      },
+      onFinally: () {
+        if (mounted) setState(() => _busy = false);
+      },
+    );
   }
 
   @override
@@ -1614,13 +1628,15 @@ class _AdminDepartmentsTab extends StatelessWidget {
                 final name = nameCtrl.text.trim();
                 if (code.isEmpty || name.isEmpty) return;
                 final state = AppStateScope.of(context);
-                try {
-                  await state.api.adminAddOrUpdateDepartment(code, name, hodId);
-                  onReload();
-                  if (context.mounted) Navigator.pop(ctx);
-                } catch (e) {
-                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-                }
+                await AsyncActionHelper.run(
+                  context,
+                  action: () async {
+                    await state.api.adminAddOrUpdateDepartment(code, name, hodId);
+                    onReload();
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  successMessage: 'Department $code saved',
+                );
               },
               child: const Text('Save'),
             ),
@@ -1651,25 +1667,15 @@ class _AdminDepartmentsTab extends StatelessWidget {
               final name = divCtrl.text.trim().toUpperCase();
               if (name.isEmpty) return;
               final state = AppStateScope.of(context);
-              try {
-                await state.api.adminAddDivision(dept['id'], name);
-                onReload();
-                if (context.mounted) {
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      backgroundColor: Colors.green.shade700,
-                      content: Text('Division $name added to ${dept['code']}'),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error adding division: $e')),
-                  );
-                }
-              }
+              await AsyncActionHelper.run(
+                context,
+                action: () async {
+                  await state.api.adminAddDivision(dept['id'], name);
+                  onReload();
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                successMessage: 'Division $name added to ${dept['code']}',
+              );
             },
             child: const Text('Add Division'),
           ),
@@ -1699,24 +1705,14 @@ class _AdminDepartmentsTab extends StatelessWidget {
     if (confirmed == true) {
       if (!context.mounted) return;
       final state = AppStateScope.of(context);
-      try {
-        await state.api.adminDeleteDivision(dept['id'], div['id']);
-        onReload();
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: Colors.green.shade700,
-              content: Text('Division ${div['name']} deleted from ${dept['code']}'),
-            ),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Cannot delete division: $e')),
-          );
-        }
-      }
+      await AsyncActionHelper.run(
+        context,
+        action: () async {
+          await state.api.adminDeleteDivision(dept['id'], div['id']);
+          onReload();
+        },
+        successMessage: 'Division ${div['name']} deleted from ${dept['code']}',
+      );
     }
   }
 
@@ -1740,21 +1736,14 @@ class _AdminDepartmentsTab extends StatelessWidget {
     if (confirmed == true) {
       if (!context.mounted) return;
       final state = AppStateScope.of(context);
-      try {
-        await state.api.adminDeleteDepartment(dept['id']);
-        onReload();
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Deleted department ${dept['code']}')),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Cannot delete: $e')),
-          );
-        }
-      }
+      await AsyncActionHelper.run(
+        context,
+        action: () async {
+          await state.api.adminDeleteDepartment(dept['id']);
+          onReload();
+        },
+        successMessage: 'Deleted department ${dept['code']}',
+      );
     }
   }
 
@@ -2065,14 +2054,14 @@ class _OutpassDetailSheet extends StatelessWidget {
     if (confirmed == true) {
       if (!context.mounted) return;
       final state = AppStateScope.of(context);
-      try {
-        await state.api.adminCancelOutpass(outpass['id']);
-        onCancelled();
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-        }
-      }
+      await AsyncActionHelper.run(
+        context,
+        action: () async {
+          await state.api.adminCancelOutpass(outpass['id']);
+          onCancelled();
+        },
+        successMessage: 'Pass ${outpass['displayId']} cancelled',
+      );
     }
   }
 
@@ -2178,25 +2167,23 @@ class _AdminSettingsTabState extends State<_AdminSettingsTab> {
   Future<void> _save() async {
     setState(() => _saving = true);
     final state = AppStateScope.of(context);
-    try {
-      final dwell = int.tryParse(_dwellCtrl.text.trim()) ?? 10;
-      final cats = _catCtrl.text.split(',').map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
-      await state.api.adminUpdateSettings(
-        collegeName: _collegeCtrl.text.trim(),
-        minDwellMinutes: dwell,
-        categories: cats,
-      );
-      widget.onReload();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Settings saved successfully in database')),
+    final dwell = int.tryParse(_dwellCtrl.text.trim()) ?? 10;
+    final cats = _catCtrl.text.split(',').map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
+    await AsyncActionHelper.run(
+      context,
+      action: () async {
+        await state.api.adminUpdateSettings(
+          collegeName: _collegeCtrl.text.trim(),
+          minDwellMinutes: dwell,
+          categories: cats,
         );
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+        widget.onReload();
+      },
+      successMessage: 'Settings saved successfully in database',
+      onFinally: () {
+        if (mounted) setState(() => _saving = false);
+      },
+    );
   }
 
   @override

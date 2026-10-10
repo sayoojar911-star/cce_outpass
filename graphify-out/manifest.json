@@ -6,9 +6,9 @@
     "semantic_hash": "fa439650fa28a1a7aa8c2b6d81c8cc20"
   },
   "apps/api/package.json": {
-    "mtime": 1791619994.8708599,
-    "seen": 1791643530.413512,
-    "ast_hash": "63925291b9c6ce7c289390443f72cd54",
+    "mtime": 1791646076.7316775,
+    "seen": 1791646301.8541827,
+    "ast_hash": "acc2dbed576fbfafa7fb104f220feeb4",
     "semantic_hash": ""
   },
   "apps/api/prisma/seed.ts": {
@@ -300,21 +300,21 @@
     "semantic_hash": ""
   },
   "apps/mobile/lib/approver_screen.dart": {
-    "mtime": 1791606865.0976825,
-    "seen": 1791643530.431509,
-    "ast_hash": "d2c9d8bd46e207134b84d57ca8dde58a",
+    "mtime": 1791646154.2206178,
+    "seen": 1791646301.862182,
+    "ast_hash": "871c78761feef6b4078e81ac81979bed",
     "semantic_hash": ""
   },
   "apps/mobile/lib/guard_screen.dart": {
-    "mtime": 1791606711.0831976,
-    "seen": 1791643530.431509,
-    "ast_hash": "c9186b7c1d9de05cb8e917e960f93e1e",
+    "mtime": 1791645852.3583915,
+    "seen": 1791646301.862182,
+    "ast_hash": "9f0a85e34909bf597d1feac02d30bfd5",
     "semantic_hash": ""
   },
   "apps/mobile/lib/login_screen.dart": {
-    "mtime": 1791607541.531784,
-    "seen": 1791643530.431509,
-    "ast_hash": "143f39065998a9dd5b78f172afc60aae",
+    "mtime": 1791645747.6457605,
+    "seen": 1791646301.862182,
+    "ast_hash": "9d98b512cc8399e0811432300fc67d6c",
     "semantic_hash": ""
   },
   "apps/mobile/lib/main.dart": {
@@ -330,9 +330,9 @@
     "semantic_hash": ""
   },
   "apps/mobile/lib/student_screen.dart": {
-    "mtime": 1791606881.9733105,
-    "seen": 1791643530.431509,
-    "ast_hash": "3c51659c91da83553eccf46eafd8c355",
+    "mtime": 1791645799.1658223,
+    "seen": 1791646301.8631847,
+    "ast_hash": "179ccb25276210ba233510634889917a",
     "semantic_hash": ""
   },
   "apps/mobile/linux/flutter/generated_plugin_registrant.cc": {
@@ -792,9 +792,9 @@
     "semantic_hash": ""
   },
   "apps/api/src/admin/admin.controller.ts": {
-    "mtime": 1791637229.2406976,
-    "seen": 1791643530.4145155,
-    "ast_hash": "7273afbeac4981ce2547301f40662ee0",
+    "mtime": 1791645303.461422,
+    "seen": 1791646301.855186,
+    "ast_hash": "c56fc227700c6caaf65847279a1ca3b8",
     "semantic_hash": ""
   },
   "apps/api/src/admin/admin.module.ts": {
@@ -810,9 +810,9 @@
     "semantic_hash": ""
   },
   "apps/mobile/lib/admin_screen.dart": {
-    "mtime": 1791643449.9790468,
-    "seen": 1791643530.431509,
-    "ast_hash": "286cacac6294ebb327329562553ac042",
+    "mtime": 1791646136.4742095,
+    "seen": 1791646301.8611891,
+    "ast_hash": "39e86b27793ffdd0522998cc2ddbc3d6",
     "semantic_hash": ""
   },
   "apps/mobile/lib/theme/app_theme.dart": {
@@ -828,9 +828,9 @@
     "semantic_hash": ""
   },
   "apps/api/src/admin/admin-role-registration.spec.ts": {
-    "mtime": 1791603042.1483324,
-    "seen": 1791604825.546511,
-    "ast_hash": "7bfb4006bafb6b0b2f8589cf526435c7",
+    "mtime": 1791645521.7602863,
+    "seen": 1791646301.855186,
+    "ast_hash": "aec18f47490df7fa2d3eb07e71fd1988",
     "semantic_hash": ""
   },
   "apps/mobile/test/phone_normalization_and_router_test.dart": {
@@ -840,9 +840,9 @@
     "semantic_hash": ""
   },
   "apps/api/src/api-audit.spec.ts": {
-    "mtime": 1791607374.70492,
-    "seen": 1791643530.4145155,
-    "ast_hash": "45ab63d741ec9f6fb2533d064b707e21",
+    "mtime": 1791645503.4824984,
+    "seen": 1791646301.855186,
+    "ast_hash": "545dfe7a172a66d6e6bb8f4935bc56fe",
     "semantic_hash": ""
   },
   "apps/api/src/common/all-exceptions.filter.ts": {
@@ -861,6 +861,30 @@
     "mtime": 1791643459.1011176,
     "seen": 1791643530.435526,
     "ast_hash": "494cdba2ac93cd6ef661fab49dcee3ca",
+    "semantic_hash": ""
+  },
+  "apps/api/payload-empty.json": {
+    "mtime": 1791644915.217088,
+    "seen": 1791646301.8541827,
+    "ast_hash": "163fdc22ec3f3c648a32a9ed7bba6ce2",
+    "semantic_hash": ""
+  },
+  "apps/api/payload-omitted.json": {
+    "mtime": 1791644915.2149613,
+    "seen": 1791646301.8541827,
+    "ast_hash": "8d9b154d8a1531ac1327a679759f2a4b",
+    "semantic_hash": ""
+  },
+  "apps/api/src/admin/admin-student-registration.spec.ts": {
+    "mtime": 1791645438.400595,
+    "seen": 1791646301.855186,
+    "ast_hash": "68b2e5f4d4e85177c6e4ec99e400022e",
+    "semantic_hash": ""
+  },
+  "ERRORS.md": {
+    "mtime": 1791644534.0769508,
+    "seen": 1791646301.867182,
+    "ast_hash": "307fb13b1fa8c74883f1ea592213cdc1",
     "semantic_hash": ""
   }
 }

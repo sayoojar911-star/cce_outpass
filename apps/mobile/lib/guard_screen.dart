@@ -6,6 +6,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'api_client.dart';
 import 'app_state.dart';
 import 'theme/app_theme.dart';
+import 'async_action_helper.dart';
 
 /// Refreshed Guard gate screen using AppTheme, warm orange accents, and clean status views.
 class GuardHome extends StatefulWidget {
@@ -74,81 +75,86 @@ class _GuardHomeState extends State<GuardHome> {
   }
 
   Future<void> _submitScan(String token) async {
-    final result = await _state.api.scan(
-      token: token,
-      direction: _dir == _Dir.exit ? 'EXIT' : 'ENTRY',
-      gateId: _gateId.text.trim(),
-      clientScanId: uuidV4(),
-    );
-    final ok = (result['result'] as String).startsWith('OK_');
-    if (mounted) {
-      final o = result['outpass'] as Map?;
-      final s = (o?['student'] as Map?)?.cast<String, dynamic>();
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          backgroundColor: ok ? const Color(0xFF047857) : const Color(0xFFB91C1C),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
-            children: [
-              Icon(ok ? Icons.check_circle : Icons.cancel, color: Colors.white, size: 28),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  ok
-                      ? (_dir == _Dir.exit ? 'OUTPASS APPROVED' : 'RETURN RECORDED')
-                      : 'SCAN REJECTED',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Result: ${result['result']}',
-                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
-              ),
-              if (o != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
+    await AsyncActionHelper.run(
+      context,
+      action: () async {
+        final result = await _state.api.scan(
+          token: token,
+          direction: _dir == _Dir.exit ? 'EXIT' : 'ENTRY',
+          gateId: _gateId.text.trim(),
+          clientScanId: uuidV4(),
+        );
+        final ok = (result['result'] as String).startsWith('OK_');
+        if (mounted) {
+          final o = result['outpass'] as Map?;
+          final s = (o?['student'] as Map?)?.cast<String, dynamic>();
+          await showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => AlertDialog(
+              backgroundColor: ok ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  Icon(ok ? Icons.check_circle : Icons.cancel, color: Colors.white, size: 28),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      ok
+                          ? (_dir == _Dir.exit ? 'OUTPASS APPROVED' : 'RETURN RECORDED')
+                          : 'SCAN REJECTED',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Pass: ${o['displayId']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      if (s != null) ...[
-                        const SizedBox(height: 4),
-                        Text('Student: ${s['name']}', style: const TextStyle(color: Colors.white)),
-                        Text('Roll No: ${s['registerNo']}', style: const TextStyle(color: Colors.white)),
-                        Text('Dept: ${s['department']}', style: const TextStyle(color: Colors.white)),
-                      ],
-                      const SizedBox(height: 4),
-                      Text('Destination: ${o['destination']}', style: const TextStyle(color: Colors.white)),
-                    ],
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Result: ${result['result']}',
+                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
                   ),
+                  if (o != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Pass: ${o['displayId']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          if (s != null) ...[
+                            const SizedBox(height: 4),
+                            Text('Student: ${s['name']}', style: const TextStyle(color: Colors.white)),
+                            Text('Roll No: ${s['registerNo']}', style: const TextStyle(color: Colors.white)),
+                            Text('Dept: ${s['department']}', style: const TextStyle(color: Colors.white)),
+                          ],
+                          const SizedBox(height: 4),
+                          Text('Destination: ${o['destination']}', style: const TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black87),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Dismiss'),
                 ),
               ],
-            ],
-          ),
-          actions: [
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black87),
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Dismiss'),
             ),
-          ],
-        ),
-      );
-      await _loadHistory();
-    }
+          );
+          await _loadHistory();
+        }
+      },
+    );
   }
 
   void _manualTokenEntry() {
