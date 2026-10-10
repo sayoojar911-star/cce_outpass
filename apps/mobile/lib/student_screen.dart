@@ -565,7 +565,7 @@ class _QrScreenState extends State<QrScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                            border: BorderSide(color: Colors.grey.shade200),
+                            border: Border.all(color: Colors.grey.shade200),
                           ),
                           child: QrImageView(
                             data: token,

@@ -85,6 +85,9 @@ class AppTheme {
     }
   }
 
+  static const Color surfaceVariant = Color(0xFFF1F5F9);
+  static const double cardRadius = radiusLg;
+
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
@@ -96,7 +99,7 @@ class AppTheme {
       ),
       scaffoldBackgroundColor: surfaceBg,
       fontFamily: 'Inter',
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 0,
         color: cardBg,
         margin: EdgeInsets.zero,
