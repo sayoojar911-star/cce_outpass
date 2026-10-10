@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -245,7 +246,7 @@ export class AdminController {
 
     const existing = await this.prisma.user.findUnique({ where: { mobile } });
     if (existing) {
-      throw new BadRequestException(`A user with mobile ${mobile} already exists`);
+      throw new ConflictException(`A user with mobile ${mobile} already exists`);
     }
 
     const validated = await this.validateAcademicFields(dto);
@@ -359,7 +360,7 @@ export class AdminController {
       const conflict = await this.prisma.user.findFirst({
         where: { mobile: norm, NOT: { id } },
       });
-      if (conflict) throw new BadRequestException(`Mobile ${norm} already in use`);
+      if (conflict) throw new ConflictException(`Mobile ${norm} already in use`);
       mobile = norm;
     }
 

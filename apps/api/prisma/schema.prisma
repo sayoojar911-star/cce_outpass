@@ -56,6 +56,9 @@ model User {
   sessions  Session[]
   tutorOf   Student[] @relation("TutorStudents")
   createdAt DateTime  @default(now())
+
+  @@index([role, status])
+  @@index([department])
 }
 
 model Student {
@@ -69,6 +72,9 @@ model Student {
   tutorId    String?
   tutor      User?            @relation("TutorStudents", fields: [tutorId], references: [id])
   outpasses  OutpassRequest[]
+
+  @@index([tutorId])
+  @@index([department, year, division])
 }
 
 model Device {
@@ -103,6 +109,8 @@ model Session {
   expiresAt      DateTime
   revokedAt      DateTime?
   createdAt      DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model OutpassRequest {
@@ -146,6 +154,8 @@ model Approval {
   decidedAt   DateTime @default(now())
 
   @@unique([requestId, stage])
+  @@index([approverId])
+  @@index([requestId])
 }
 
 model Gate {
@@ -169,6 +179,7 @@ model GateEvent {
   scannedAt    DateTime      @default(now())
 
   @@index([guardId, scannedAt])
+  @@index([outpassId])
 }
 
 model AuditLog {
@@ -182,6 +193,10 @@ model AuditLog {
   detail     String?
   prevHash   String?
   hash       String?
+
+  @@index([actorId])
+  @@index([action])
+  @@index([at])
 }
 
 model Notification {
