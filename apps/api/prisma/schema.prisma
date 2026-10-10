@@ -48,6 +48,8 @@ model User {
   role      Role
   mobile    String    @unique
   department String?
+  year      Int?
+  division  String?
   status    String    @default("ACTIVE")
   student   Student?
   devices   Device[]
@@ -62,6 +64,8 @@ model Student {
   registerNo String           @unique
   department String
   semester   Int
+  year       Int?
+  division   String?
   tutorId    String?
   tutor      User?            @relation("TutorStudents", fields: [tutorId], references: [id])
   outpasses  OutpassRequest[]
@@ -192,11 +196,22 @@ model Notification {
 }
 
 model Department {
-  id        String   @id @default(uuid())
-  code      String   @unique
+  id        String     @id @default(uuid())
+  code      String     @unique
   name      String
   hodId     String?
-  createdAt DateTime @default(now())
+  divisions Division[]
+  createdAt DateTime   @default(now())
+}
+
+model Division {
+  id           String     @id @default(uuid())
+  name         String
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([departmentId, name])
 }
 
 model AppSetting {
