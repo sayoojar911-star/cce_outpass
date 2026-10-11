@@ -1,0 +1,19 @@
+{
+  "source_path": "docs/decisions.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Decision Log (CCE Outpass Architecture)",
+  "summary": "12 locked architectural decisions covering stack, client platform, cryptographic ECDSA tokens, atomic transitions, auth, and gate verification.",
+  "scope": [
+    "technology stack",
+    "device keys",
+    "cryptographic QR tokens",
+    "database transactions",
+    "gate dwell and scanning"
+  ],
+  "cross_refs": ["docs/PRD.md"],
+  "locked": true,
+  "precedence": 0,
+  "notes": "All 12 decisions accepted and implemented in current codebase."
+}

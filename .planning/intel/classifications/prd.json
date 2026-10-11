@@ -1,0 +1,19 @@
+{
+  "source_path": "docs/PRD.md",
+  "type": "PRD",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "CCE Outpass — PRD Summary (MVP Scope)",
+  "summary": "Core outpass lifecycle requirements for Christ College of Engineering covering student requests, tutor & HOD approvals, dynamic rotating QR token, and security guard gate scanning.",
+  "scope": [
+    "student outpass requests",
+    "approver workflow",
+    "gate security scanning",
+    "audit logs",
+    "deferred features"
+  ],
+  "cross_refs": ["docs/decisions.md"],
+  "locked": false,
+  "precedence": 2,
+  "notes": "Specifies MVP functional requirements and explicit cuts for downstream phases."
+}
