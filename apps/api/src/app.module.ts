@@ -9,6 +9,7 @@ import { OutpassModule } from './outpass/outpass.module';
 import { GateModule } from './gate/gate.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AdminModule } from './admin/admin.module';
+import { AppConfigModule } from './config/config.module';
 import { ExpiryService } from './jobs/expiry.service';
 
 @Module({
@@ -39,6 +40,7 @@ import { ExpiryService } from './jobs/expiry.service';
     GateModule,
     NotificationsModule,
     AdminModule,
+    AppConfigModule,
   ],
   providers: [PrismaService, ExpiryService],
 })

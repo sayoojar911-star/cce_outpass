@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { AdminController } from './admin.controller';
 import { AuthService } from '../auth/auth.service';
 import { FirebaseAuthService } from '../auth/firebase-auth.service';
+import { PhotoStorageService } from '../auth/photo-storage.service';
 
 describe('Admin Role Registration & Login E2E', () => {
   let prisma: PrismaService;
@@ -24,7 +25,8 @@ describe('Admin Role Registration & Login E2E', () => {
     const firebaseMock = {
       verifyPhoneIdToken: jest.fn(),
     } as unknown as FirebaseAuthService;
-    authService = new AuthService(prisma, jwtService, audit, firebaseMock);
+    const photoStorage = new PhotoStorageService();
+    authService = new AuthService(prisma, jwtService, audit, firebaseMock, photoStorage);
 
     // Clean up any old test users
     await prisma.student.deleteMany({

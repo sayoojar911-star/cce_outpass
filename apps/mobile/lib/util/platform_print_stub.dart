@@ -1,3 +1,1 @@
-void printTicketWeb() {
-  // Stub for non-web platforms.
-}
+void printTicketWeb({String? html}) {}

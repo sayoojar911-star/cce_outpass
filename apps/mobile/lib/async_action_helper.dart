@@ -83,6 +83,13 @@ class AsyncActionHelper {
       return 'Server response was malformed. Please try again.';
     }
     final raw = error.toString();
+    if (raw.contains('ClientException') ||
+        raw.contains('Failed to fetch') ||
+        raw.contains('XMLHttpRequest error') ||
+        raw.contains('Connection refused') ||
+        raw.contains('NetworkError')) {
+      return 'Unable to connect to the server. Please check your network connection.';
+    }
     return raw.replaceFirst('Exception: ', '').replaceFirst('Error: ', '');
   }
 }

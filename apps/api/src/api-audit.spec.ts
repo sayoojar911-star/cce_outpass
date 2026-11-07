@@ -5,6 +5,7 @@ import { AuditService } from './audit/audit.service';
 import { AdminController } from './admin/admin.controller';
 import { AuthService } from './auth/auth.service';
 import { FirebaseAuthService } from './auth/firebase-auth.service';
+import { PhotoStorageService } from './auth/photo-storage.service';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { JwtAuthGuard } from './common/jwt-auth.guard';
 import { RolesGuard } from './common/roles.guard';
@@ -31,7 +32,8 @@ describe('Phase 3: Backend API Audit & Health Check', () => {
     const firebaseMock = {
       verifyPhoneIdToken: jest.fn(),
     } as unknown as FirebaseAuthService;
-    authService = new AuthService(prisma, jwtService, audit, firebaseMock);
+    const photoStorage = new PhotoStorageService();
+    authService = new AuthService(prisma, jwtService, audit, firebaseMock, photoStorage);
     filter = new AllExceptionsFilter();
 
     // Clean up test users

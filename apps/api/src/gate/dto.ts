@@ -25,3 +25,23 @@ export class StartShiftDto {
   @Length(1, 64)
   gateId: string;
 }
+
+export class ManualEntryDto {
+  @IsString()
+  @Length(3, 32)
+  code: string;
+
+  @IsIn(['EXIT', 'ENTRY'])
+  direction: 'EXIT' | 'ENTRY';
+
+  @IsString()
+  @Length(1, 64)
+  gateId: string;
+
+  @IsUUID()
+  clientScanId: string;
+
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
+}

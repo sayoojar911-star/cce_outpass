@@ -34,11 +34,13 @@ export class ExpiryService {
     if (res.count > 0) {
       this.logger.log(`expired ${res.count} outpasses`);
       for (const s of stale) {
-        await this.notifications.push(
-          s.studentId,
-          'Outpass expired',
-          'Your outpass validity window passed without exit',
-        );
+        if (s.studentId) {
+          await this.notifications.push(
+            s.studentId,
+            'Outpass expired',
+            'Your outpass validity window passed without exit',
+          );
+        }
       }
     }
   }
@@ -58,11 +60,13 @@ export class ExpiryService {
     if (res.count > 0) {
       this.logger.log(`marked ${res.count} outpasses overdue`);
       for (const s of stale) {
-        await this.notifications.push(
-          s.studentId,
-          'Return overdue',
-          'You have not been scanned back at the gate',
-        );
+        if (s.studentId) {
+          await this.notifications.push(
+            s.studentId,
+            'Return overdue',
+            'You have not been scanned back at the gate',
+          );
+        }
       }
     }
   }

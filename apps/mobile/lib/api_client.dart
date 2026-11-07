@@ -33,13 +33,14 @@ String normalizeMobilePhone(String? value) {
 /// (PRD §4 principles) — the app only displays and requests.
 class ApiClient {
   ApiClient({
-    this.baseUrl = const String.fromEnvironment(
-      'API_BASE_URL',
-      defaultValue: 'http://localhost:3000/v1',
-    ),
-  });
+    String? baseUrl,
+  }) : baseUrl = baseUrl ??
+            const String.fromEnvironment(
+              'API_BASE_URL',
+              defaultValue: 'http://localhost:3000/v1',
+            );
 
-  final String baseUrl;
+  String baseUrl;
   String? accessToken;
 
   Map<String, String> get _headers => {
@@ -88,12 +89,68 @@ class ApiClient {
         .cast<String, dynamic>();
   }
 
+  /// Send OTP for new student registration.
+  Future<Map<String, dynamic>> sendSignupOtp(String mobile) async {
+    return (await post('/auth/signup/otp/send', body: {'mobile': mobile}))
+        .cast<String, dynamic>();
+  }
+
   /// Verify OTP and get access + refresh tokens.
   Future<Map<String, dynamic>> verifyOtp(String mobile, String code) async {
     final res =
         await post('/auth/otp/verify', body: {'mobile': mobile, 'code': code});
     accessToken = res['accessToken'] as String?;
     return (res['user'] as Map).cast<String, dynamic>();
+  }
+
+  /// Verify OTP for new student registration, returning verified token.
+  Future<Map<String, dynamic>> verifySignupOtp(String mobile, String code) async {
+    final res = await post('/auth/signup/otp/verify',
+        body: {'mobile': mobile, 'code': code});
+    return (res as Map).cast<String, dynamic>();
+  }
+
+  /// Complete student registration and receive session tokens.
+  Future<Map<String, dynamic>> registerStudent({
+    required String idToken,
+    required String name,
+    required String rollNo,
+    required int year,
+    required String department,
+    required String photo,
+  }) async {
+    final res = await post('/auth/register', body: {
+      'idToken': idToken,
+      'name': name,
+      'rollNo': rollNo,
+      'year': year,
+      'department': department,
+      'photo': photo,
+    });
+    accessToken = res['accessToken'] as String?;
+    return (res as Map).cast<String, dynamic>();
+  }
+
+  /// Resolves relative image/media paths (e.g. /uploads/students/...) against server base URL.
+  String resolveMediaUrl(String? url) {
+    if (url == null || url.isEmpty) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      return url;
+    }
+    final serverOrigin = baseUrl.replaceAll(RegExp(r'/v1/?$'), '');
+    return '$serverOrigin${url.startsWith('/') ? '' : '/'}$url';
+  }
+
+  /// Update authenticated user's profile photo.
+  Future<Map<String, dynamic>> updateProfilePhoto(String photoDataUri) async {
+    final res = await post('/auth/profile/photo', body: {'photo': photoDataUri});
+    return (res as Map).cast<String, dynamic>();
+  }
+
+  /// Remove authenticated user's profile photo.
+  Future<Map<String, dynamic>> deleteProfilePhoto() async {
+    final res = await delete('/auth/profile/photo');
+    return (res as Map).cast<String, dynamic>();
   }
 
   Future<Map<String, dynamic>> refresh(String refreshToken) async {
@@ -125,19 +182,28 @@ class ApiClient {
     String? purposeText,
     String type = 'NORMAL',
   }) async {
-    return (await post('/outpasses', body: {
+    final body = <String, dynamic>{
       'requestedExitAt': requestedExitAt,
       'expectedReturnAt': expectedReturnAt,
       'destination': destination,
       'purposeCategory': purposeCategory,
-      'purposeText': ?purposeText,
       'type': type,
-    }))
-        .cast<String, dynamic>();
+    };
+    if (purposeText != null && purposeText.trim().isNotEmpty) {
+      body['purposeText'] = purposeText.trim();
+    }
+    final res = await post('/outpasses', body: body);
+    if (res is Map) {
+      return res.cast<String, dynamic>();
+    }
+    return <String, dynamic>{};
   }
 
-  Future<void> cancelOutpass(String id) async {
-    await post('/outpasses/$id/cancel');
+  Future<void> cancelOutpass(String id, {String? reason}) async {
+    await post(
+      '/outpasses/$id/cancel',
+      body: reason != null && reason.isNotEmpty ? {'reason': reason} : null,
+    );
   }
 
   // ---- Approvals (FR-TUT / FR-HOD) ----
@@ -147,10 +213,34 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> decide(String outpassId, String decision,
+      {String? comment, String? path}) async {
+    final body = <String, dynamic>{'decision': decision};
+    if (comment != null) body['comment'] = comment;
+    if (path != null) body['path'] = path;
+    return (await post('/approvals/$outpassId/decision', body: body))
+        .cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> approveDirect(String outpassId,
       {String? comment}) async {
-    return (await post('/approvals/$outpassId/decision', body: {
-      'decision': decision,
-      'comment': ?comment,
+    final body = <String, dynamic>{};
+    if (comment != null) body['comment'] = comment;
+    return (await post('/approvals/$outpassId/approve-direct', body: body))
+        .cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> forwardToHod(String outpassId,
+      {String? comment}) async {
+    final body = <String, dynamic>{};
+    if (comment != null) body['comment'] = comment;
+    return (await post('/approvals/$outpassId/forward-hod', body: body))
+        .cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> rejectOutpass(String outpassId, String reason) async {
+    return (await post('/approvals/$outpassId/reject', body: {
+      'reason': reason,
+      'comment': reason,
     }))
         .cast<String, dynamic>();
   }
@@ -169,6 +259,21 @@ class ApiClient {
   }) async {
     return (await post('/gate/scans', body: {
       'token': token,
+      'direction': direction,
+      'gateId': gateId,
+      'clientScanId': clientScanId,
+    }))
+        .cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> manualEntry({
+    required String code,
+    required String direction,
+    required String gateId,
+    required String clientScanId,
+  }) async {
+    return (await post('/gate/manual-entry', body: {
+      'code': code,
       'direction': direction,
       'gateId': gateId,
       'clientScanId': clientScanId,
@@ -242,23 +347,16 @@ class ApiClient {
     return (await get('/admin/outpasses') as List).cast<dynamic>();
   }
 
-  Future<void> adminCancelOutpass(String id) async {
-    await post('/admin/outpasses/$id/cancel');
+  Future<void> adminCancelOutpass(String id, {String? reason}) async {
+    await post('/admin/outpasses/$id/cancel', body: reason != null ? {'reason': reason} : null);
   }
 
   Future<Map<String, dynamic>> adminGetSettings() async {
     return (await get('/admin/settings') as Map).cast<String, dynamic>();
   }
 
-  Future<void> adminUpdateSettings(
-      {String? collegeName,
-      int? minDwellMinutes,
-      List<String>? categories}) async {
-    await post('/admin/settings', body: {
-      'collegeName': ?collegeName,
-      'minDwellMinutes': ?minDwellMinutes,
-      'categories': ?categories,
-    });
+  Future<void> adminUpdateSettings(Map<String, dynamic> settings) async {
+    await post('/admin/settings', body: settings);
   }
 
   Future<List<dynamic>> adminGetAuditLog({int limit = 50, int offset = 0}) async {
@@ -268,6 +366,96 @@ class ApiClient {
 
   Future<Map<String, dynamic>> adminGetDashboard() async {
     return (await get('/admin/dashboard') as Map).cast<String, dynamic>();
+  }
+
+  // ---- Dynamic Configuration Endpoints ----
+
+  Future<Map<String, dynamic>> getAllConfig() async {
+    try {
+      final res = await get('/config/all');
+      if (res is Map) return res.cast<String, dynamic>();
+    } catch (_) {}
+    return {
+      'roles': await getRoles(),
+      'departments': [],
+      'purposeCategories': await getPurposeCategories(),
+      'outpassTypes': await getOutpassTypes(),
+      'settings': {},
+    };
+  }
+
+  Future<List<dynamic>> getRoles() async {
+    try {
+      final res = await get('/config/roles');
+      if (res is List) return res.cast<dynamic>();
+    } catch (_) {}
+    return [
+      {'id': 'student', 'name': 'Student', 'permissions': ['createOutpass']},
+      {'id': 'tutor', 'name': 'Tutor', 'permissions': ['approveOutpass']},
+      {'id': 'hod', 'name': 'HOD', 'permissions': ['approveOutpass']},
+      {'id': 'guard', 'name': 'Security Guard', 'permissions': ['scanGate']},
+      {'id': 'admin', 'name': 'Administrator', 'permissions': ['manageUsers', 'manageRoles', 'viewAll']},
+      {'id': 'pending', 'name': 'Pending Approval', 'permissions': []},
+    ];
+  }
+
+  Future<List<dynamic>> getPurposeCategories() async {
+    try {
+      final res = await get('/config/purpose-categories');
+      if (res is List) return res.cast<dynamic>();
+    } catch (_) {}
+    return [
+      {'id': 'cat-medical', 'label': 'Medical', 'active': true},
+      {'id': 'cat-personal', 'label': 'Personal', 'active': true},
+      {'id': 'cat-official', 'label': 'Official', 'active': true},
+      {'id': 'cat-academic', 'label': 'Academic', 'active': true},
+      {'id': 'cat-emergency', 'label': 'Emergency', 'active': true},
+    ];
+  }
+
+  Future<List<dynamic>> getOutpassTypes() async {
+    try {
+      final res = await get('/config/outpass-types');
+      if (res is List) return res.cast<dynamic>();
+    } catch (_) {}
+    return [
+      {'id': 'normal', 'label': 'Normal (Tutor -> HOD)', 'approvalChain': ['tutor', 'hod'], 'active': true},
+      {'id': 'emergency', 'label': 'Emergency', 'approvalChain': ['hod'], 'active': true},
+    ];
+  }
+
+  Future<Map<String, dynamic>> getSettings() async {
+    try {
+      final res = await get('/config/settings');
+      if (res is Map) return res.cast<String, dynamic>();
+    } catch (_) {}
+    return {};
+  }
+
+  // ---- Admin Role & Workflow Management ----
+
+  Future<Map<String, dynamic>> adminSaveRole(Map<String, dynamic> data) async {
+    return (await post('/admin/roles', body: data) as Map).cast<String, dynamic>();
+  }
+
+  Future<void> adminDeleteRole(String id) async {
+    await post('/admin/roles/$id/delete');
+  }
+
+  Future<Map<String, dynamic>> adminSavePurposeCategory(Map<String, dynamic> data) async {
+    return (await post('/admin/purpose-categories', body: data) as Map).cast<String, dynamic>();
+  }
+
+  Future<void> adminDeletePurposeCategory(String id) async {
+    await post('/admin/purpose-categories/$id/delete');
+  }
+
+  Future<Map<String, dynamic>> adminSaveOutpassType(Map<String, dynamic> data) async {
+    return (await post('/admin/outpass-types', body: data) as Map).cast<String, dynamic>();
+  }
+
+  Future<void> adminDeleteOutpassType(String id) async {
+    await post('/admin/outpass-types/$id/delete');
   }
 }
 

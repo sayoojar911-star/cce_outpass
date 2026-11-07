@@ -1,27 +1,23 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { OutpassService } from './outpass.service';
-import { Auth } from '../common/auth.decorator';
+import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { RequirePermissions } from '../common/auth.decorator';
 import { CreateOutpassDto, CancelDto } from './dto';
-import { OutpassStatus } from '@prisma/client';
 
 @Controller('outpasses')
-@Auth()
+@UseGuards(JwtAuthGuard)
 export class OutpassController {
   constructor(private readonly outpass: OutpassService) {}
 
   @Post()
-  @Auth('STUDENT')
+  @RequirePermissions('createOutpass')
   create(@Req() req: any, @Body() dto: CreateOutpassDto) {
     return this.outpass.create(req.user, dto);
   }
 
   @Get()
   list(@Req() req: any, @Query('status') status?: string) {
-    const valid = Object.values(OutpassStatus) as string[];
-    return this.outpass.listFor(
-      req.user,
-      status && valid.includes(status) ? (status as OutpassStatus) : undefined,
-    );
+    return this.outpass.listFor(req.user, status);
   }
 
   @Get(':id')
@@ -30,7 +26,7 @@ export class OutpassController {
   }
 
   @Post(':id/cancel')
-  @Auth('STUDENT')
+  @RequirePermissions('createOutpass')
   cancel(@Req() req: any, @Param('id') id: string, @Body() dto: CancelDto) {
     return this.outpass.cancel(req.user, id, dto.reason);
   }

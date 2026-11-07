@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Christ College Outpass requires camera access to capture a student ID profile photo.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Christ College Outpass requires photo library access to select a student ID profile photo.</string>
 </dict>
 </plist>

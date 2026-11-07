@@ -30,13 +30,52 @@ export class CreateOutpassDto {
   purposeText?: string;
 
   @IsOptional()
-  @IsIn(['NORMAL', 'EMERGENCY'])
-  type?: 'NORMAL' | 'EMERGENCY';
+  @IsString()
+  type?: string;
 }
 
 export class DecisionDto {
-  @IsIn(['APPROVED', 'REJECTED'])
-  decision: 'APPROVED' | 'REJECTED';
+  @IsIn([
+    'APPROVED',
+    'REJECTED',
+    'APPROVE',
+    'REJECT',
+    'DIRECT_APPROVE',
+    'FORWARD_HOD',
+    'APPROVE_DIRECT',
+    'APPROVE_AND_FORWARD',
+  ])
+  decision: string;
+
+  @IsOptional()
+  @IsIn(['DIRECT', 'FORWARD_HOD', 'FORWARDED'])
+  path?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  comment?: string;
+}
+
+export class DirectApprovalDto {
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  comment?: string;
+}
+
+export class ForwardHodDto {
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  comment?: string;
+}
+
+export class RejectOutpassDto {
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  reason?: string;
 
   @IsOptional()
   @IsString()

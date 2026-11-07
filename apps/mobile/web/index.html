@@ -46,6 +46,168 @@
     script.src = `flutter_bootstrap.js?v=${Date.now()}`;
     script.async = true;
     document.head.appendChild(script);
+
+    window.printCleanTicket = function(htmlContent) {
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow.document;
+      doc.open();
+      doc.write(htmlContent);
+      doc.close();
+
+      iframe.contentWindow.focus();
+      setTimeout(function() {
+        iframe.contentWindow.print();
+        setTimeout(function() {
+          if (iframe.parentNode) {
+            document.body.removeChild(iframe);
+          }
+        }, 1000);
+      }, 300);
+    };
+    window.ccePrinterAudio = {
+      ctx: null,
+      activeNodes: [],
+      init: function() {
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx && !this.ctx) {
+            this.ctx = new AudioCtx();
+          }
+          if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(function(){});
+          }
+        } catch(e) {}
+      },
+      start: function(durationMs) {
+        this.stop();
+        this.init();
+        if (!this.ctx) return;
+        try {
+          const ctx = this.ctx;
+          const now = ctx.currentTime;
+          const totalSec = (durationMs || 3500) / 1000;
+          
+          const masterGain = ctx.createGain();
+          masterGain.gain.setValueAtTime(0.22, now);
+          masterGain.connect(ctx.destination);
+          this.activeNodes.push(masterGain);
+
+          // 1. Mechanical initial engagement click (0.0s -> 0.05s)
+          const clickOsc = ctx.createOscillator();
+          clickOsc.type = 'triangle';
+          clickOsc.frequency.setValueAtTime(140, now);
+          clickOsc.frequency.exponentialRampToValueAtTime(40, now + 0.04);
+          const clickGain = ctx.createGain();
+          clickGain.gain.setValueAtTime(0.35, now);
+          clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+          clickOsc.connect(clickGain);
+          clickGain.connect(masterGain);
+          clickOsc.start(now);
+          clickOsc.stop(now + 0.05);
+          this.activeNodes.push(clickOsc);
+
+          // 2. Continuous motor roller hum & gear drive
+          const feedEnd = Math.max(now + 0.1, now + (totalSec * 0.80));
+          
+          const motorOsc = ctx.createOscillator();
+          motorOsc.type = 'sawtooth';
+          motorOsc.frequency.setValueAtTime(160, now + 0.02);
+          
+          const lfo = ctx.createOscillator();
+          lfo.frequency.setValueAtTime(8, now);
+          const lfoGain = ctx.createGain();
+          lfoGain.gain.setValueAtTime(6, now);
+          lfo.connect(lfoGain);
+          lfoGain.connect(motorOsc.frequency);
+          lfo.start(now + 0.02);
+          lfo.stop(feedEnd);
+          this.activeNodes.push(lfo);
+
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'bandpass';
+          filter.frequency.setValueAtTime(800, now);
+          filter.Q.setValueAtTime(3.0, now);
+
+          const feedGain = ctx.createGain();
+          feedGain.gain.setValueAtTime(0.0, now);
+          feedGain.gain.linearRampToValueAtTime(0.18, now + 0.06);
+          feedGain.gain.setValueAtTime(0.18, feedEnd - 0.08);
+          feedGain.gain.linearRampToValueAtTime(0.0, feedEnd);
+
+          motorOsc.connect(filter);
+          filter.connect(feedGain);
+          feedGain.connect(masterGain);
+          motorOsc.start(now + 0.02);
+          motorOsc.stop(feedEnd);
+          this.activeNodes.push(motorOsc);
+
+          // Thermal paper friction noise simulation
+          const bufferSize = ctx.sampleRate * 2;
+          const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+          const output = noiseBuffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) {
+            output[i] = Math.random() * 2 - 1;
+          }
+          const whiteNoise = ctx.createBufferSource();
+          whiteNoise.buffer = noiseBuffer;
+          whiteNoise.loop = true;
+          const noiseFilter = ctx.createBiquadFilter();
+          noiseFilter.type = 'bandpass';
+          noiseFilter.frequency.setValueAtTime(1400, now);
+          noiseFilter.Q.setValueAtTime(1.5, now);
+          const noiseGain = ctx.createGain();
+          noiseGain.gain.setValueAtTime(0.0, now);
+          noiseGain.gain.linearRampToValueAtTime(0.08, now + 0.05);
+          noiseGain.gain.setValueAtTime(0.08, feedEnd - 0.08);
+          noiseGain.gain.linearRampToValueAtTime(0.0, feedEnd);
+
+          whiteNoise.connect(noiseFilter);
+          noiseFilter.connect(noiseGain);
+          noiseGain.connect(masterGain);
+          whiteNoise.start(now + 0.02);
+          whiteNoise.stop(feedEnd);
+          this.activeNodes.push(whiteNoise);
+
+          // 3. Crisp tear / cutter finish release
+          const tearTime = now + (totalSec * 0.78);
+          const tearOsc = ctx.createOscillator();
+          tearOsc.type = 'sine';
+          tearOsc.frequency.setValueAtTime(500, tearTime);
+          tearOsc.frequency.exponentialRampToValueAtTime(80, tearTime + 0.04);
+          const tearGain = ctx.createGain();
+          tearGain.gain.setValueAtTime(0.28, tearTime);
+          tearGain.gain.exponentialRampToValueAtTime(0.001, tearTime + 0.05);
+          tearOsc.connect(tearGain);
+          tearGain.connect(masterGain);
+          tearOsc.start(tearTime);
+          tearOsc.stop(tearTime + 0.06);
+          this.activeNodes.push(tearOsc);
+        } catch(e) {}
+      },
+      stop: function() {
+        try {
+          for (let i = 0; i < this.activeNodes.length; i++) {
+            try {
+              if (this.activeNodes[i].stop) this.activeNodes[i].stop();
+              if (this.activeNodes[i].disconnect) this.activeNodes[i].disconnect();
+            } catch(_) {}
+          }
+        } catch(_) {}
+        this.activeNodes = [];
+      }
+    };
+
+    document.addEventListener('pointerdown', function() {
+      if (window.ccePrinterAudio) window.ccePrinterAudio.init();
+    }, { once: true, passive: true });
   </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.

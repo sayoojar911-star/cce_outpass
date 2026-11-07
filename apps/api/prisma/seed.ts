@@ -1,44 +1,153 @@
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const adminPhone = process.env.ADMIN_PHONE || '8921578838';
+  console.log('Seeding initial database configuration...');
 
-  // 1. Seed Admin User
-  const admin = await prisma.user.upsert({
-    where: { mobile: adminPhone },
-    update: { role: Role.ADMIN, status: 'ACTIVE' },
-    create: {
+  // 1. Roles
+  const roles = [
+    {
+      id: 'admin',
       name: 'System Administrator',
-      role: Role.ADMIN,
-      mobile: adminPhone,
-      status: 'ACTIVE',
+      description: 'Full institutional configuration and user management',
+      permissions: [
+        'createOutpass',
+        'approveOutpass',
+        'gateScan',
+        'manageUsers',
+        'manageRoles',
+        'manageDepartments',
+        'manageOutpassConfig',
+        'viewAll',
+      ],
+      isSystem: true,
+      active: true,
     },
+    {
+      id: 'tutor',
+      name: 'Class Tutor',
+      description: 'Approves outpass requests for assigned division students',
+      permissions: ['approveOutpass'],
+      isSystem: false,
+      active: true,
+    },
+    {
+      id: 'hod',
+      name: 'Head of Department',
+      description: 'Authorizes departmental outpass approvals',
+      permissions: ['approveOutpass'],
+      isSystem: false,
+      active: true,
+    },
+    {
+      id: 'guard',
+      name: 'Gate Security Guard',
+      description: 'Verifies passes and scans QR credentials at campus gates',
+      permissions: ['gateScan'],
+      isSystem: false,
+      active: true,
+    },
+    {
+      id: 'student',
+      name: 'Student',
+      description: 'Generates and tracks digital gate outpasses',
+      permissions: ['createOutpass'],
+      isSystem: false,
+      active: true,
+    },
+    {
+      id: 'pending',
+      name: 'Pending Assignment',
+      description: 'New account awaiting admin assignment',
+      permissions: [],
+      isSystem: true,
+      active: true,
+    },
+  ];
+
+  for (const r of roles) {
+    await prisma.role.upsert({
+      where: { id: r.id },
+      update: {
+        name: r.name,
+        description: r.description,
+        permissions: r.permissions,
+        isSystem: r.isSystem,
+        active: r.active,
+      },
+      create: r,
+    });
+  }
+
+  // 2. Purpose Categories
+  const categories = ['Medical', 'Academic', 'Personal', 'Official', 'Emergency'];
+  for (const cat of categories) {
+    const existing = await prisma.purposeCategory.findFirst({ where: { label: cat } });
+    if (!existing) {
+      await prisma.purposeCategory.create({ data: { label: cat, active: true } });
+    }
+  }
+
+  // 3. Outpass Types (Strictly exactly two: normal & emergency)
+  const types = [
+    {
+      id: 'normal',
+      label: 'Normal (Tutor -> HOD)',
+      approvalChain: ['tutor', 'hod'],
+      requiresExplanation: false,
+      active: true,
+    },
+    {
+      id: 'emergency',
+      label: 'Emergency (Direct to HOD)',
+      approvalChain: ['hod'],
+      requiresExplanation: true,
+      active: true,
+    },
+  ];
+  for (const t of types) {
+    await prisma.outpassTypeConfig.upsert({
+      where: { id: t.id },
+      update: {
+        label: t.label,
+        approvalChain: t.approvalChain,
+        requiresExplanation: t.requiresExplanation,
+        active: t.active,
+      },
+      create: t,
+    });
+  }
+  await prisma.outpassTypeConfig.deleteMany({
+    where: { id: { notIn: ['normal', 'emergency'] } },
   });
 
-  // 2. Seed Default Gate
+  // 4. Default Settings
+  const defaultSettings = [
+    { key: 'collegeName', value: JSON.stringify('Christ College of Engineering, Irinjalakuda') },
+    { key: 'minDwellMinutes', value: JSON.stringify(10) },
+    { key: 'defaultDurationHours', value: JSON.stringify(3) },
+    { key: 'defaultRoleId', value: JSON.stringify('pending') },
+    { key: 'allowedStartTime', value: JSON.stringify('06:00') },
+    { key: 'allowedEndTime', value: JSON.stringify('21:00') },
+    { key: 'admin_bootstrapped', value: JSON.stringify(true) },
+  ];
+  for (const s of defaultSettings) {
+    await prisma.appSetting.upsert({
+      where: { key: s.key },
+      update: { value: s.value },
+      create: s,
+    });
+  }
+
+  // 5. Default Gate
   await prisma.gate.upsert({
     where: { id: 'main-gate' },
     update: {},
     create: { id: 'main-gate', name: 'Main Gate', directionDefault: 'BOTH' },
   });
 
-  // 3. Seed Default Settings
-  const defaultSettings = [
-    { key: 'collegeName', value: JSON.stringify('Christ College of Engineering, Irinjalakuda') },
-    { key: 'minDwellMinutes', value: JSON.stringify(10) },
-    { key: 'categories', value: JSON.stringify(['Medical', 'Personal', 'Official', 'Academic', 'Emergency']) },
-  ];
-  for (const setting of defaultSettings) {
-    await prisma.appSetting.upsert({
-      where: { key: setting.key },
-      update: {},
-      create: setting,
-    });
-  }
-
-  // 4. Seed Academic Departments and Divisions
+  // 6. Academic Departments and Divisions
   const departments = [
     { code: 'CSE', name: 'Computer Science and Engineering', divisions: ['A', 'B', 'C', 'D'] },
     { code: 'CSDS', name: 'Computer Science and Engineering (Data Science)', divisions: [] },
@@ -64,45 +173,89 @@ async function main() {
     }
   }
 
-  // 5. Seed standard role users
-  const hod = await prisma.user.upsert({
-    where: { mobile: '8921578832' },
-    update: { role: Role.HOD, department: 'CSE', status: 'ACTIVE' },
+  // 7. Users
+  const adminPhone = process.env.ADMIN_PHONE || '8921578838';
+  const admin = await prisma.user.upsert({
+    where: { mobile: adminPhone },
+    update: { roleId: 'admin', role: 'System Administrator', status: 'ACTIVE', active: true },
     create: {
-      name: 'Dr. Priya Menon',
-      role: Role.HOD,
-      mobile: '8921578832',
-      department: 'CSE',
+      name: 'System Administrator',
+      roleId: 'admin',
+      role: 'System Administrator',
+      mobile: adminPhone,
       status: 'ACTIVE',
+      active: true,
     },
   });
-  await prisma.department.update({ where: { code: 'CSE' }, data: { hodId: hod.id } });
+
+  const cseDept = await prisma.department.findUnique({ where: { code: 'CSE' } });
+
+  const hod = await prisma.user.upsert({
+    where: { mobile: '8921578832' },
+    update: { roleId: 'hod', role: 'Head of Department', department: 'CSE', departmentId: cseDept?.id, status: 'ACTIVE', active: true },
+    create: {
+      name: 'Dr. Priya Menon',
+      roleId: 'hod',
+      role: 'Head of Department',
+      mobile: '8921578832',
+      department: 'CSE',
+      departmentId: cseDept?.id,
+      status: 'ACTIVE',
+      active: true,
+    },
+  });
+  if (cseDept) {
+    await prisma.department.update({ where: { id: cseDept.id }, data: { hodUserId: hod.id, hodId: hod.id } });
+  }
 
   const tutor = await prisma.user.upsert({
-    where: { mobile: '8921578833' },
-    update: { role: Role.TUTOR, department: 'CSE', year: 2, division: 'D', status: 'ACTIVE' },
+    where: { mobile: '1234567890' },
+    update: { roleId: 'tutor', role: 'Class Tutor', department: 'CSE', departmentId: cseDept?.id, year: 2, division: 'D', status: 'ACTIVE', active: true },
     create: {
-      name: 'Dr. Anand Kumar',
-      role: Role.TUTOR,
-      mobile: '8921578833',
+      name: 'sreedevi',
+      roleId: 'tutor',
+      role: 'Class Tutor',
+      mobile: '1234567890',
       department: 'CSE',
+      departmentId: cseDept?.id,
       year: 2,
       division: 'D',
       status: 'ACTIVE',
+      active: true,
+    },
+  });
+
+  const ceDept = await prisma.department.findUnique({ where: { code: 'CE' } });
+  await prisma.user.upsert({
+    where: { mobile: '9874563210' },
+    update: { roleId: 'tutor', role: 'Class Tutor', department: 'CE', departmentId: ceDept?.id, status: 'ACTIVE', active: true },
+    create: {
+      name: 'ranjima',
+      roleId: 'tutor',
+      role: 'Class Tutor',
+      mobile: '9874563210',
+      department: 'CE',
+      departmentId: ceDept?.id,
+      status: 'ACTIVE',
+      active: true,
     },
   });
 
   const student = await prisma.user.upsert({
     where: { mobile: '8921578831' },
-    update: { role: Role.STUDENT, department: 'CSE', year: 2, division: 'D', status: 'ACTIVE' },
+    update: { roleId: 'student', role: 'Student', department: 'CSE', departmentId: cseDept?.id, year: 2, division: 'D', tutorId: tutor.id, status: 'ACTIVE', active: true },
     create: {
       name: 'Arjun K',
-      role: Role.STUDENT,
+      roleId: 'student',
+      role: 'Student',
       mobile: '8921578831',
       department: 'CSE',
+      departmentId: cseDept?.id,
       year: 2,
       division: 'D',
+      tutorId: tutor.id,
       status: 'ACTIVE',
+      active: true,
     },
   });
   await prisma.student.upsert({
@@ -121,27 +274,22 @@ async function main() {
 
   const guard = await prisma.user.upsert({
     where: { mobile: '8921578834' },
-    update: { role: Role.GUARD, status: 'ACTIVE' },
+    update: { roleId: 'guard', role: 'Gate Security Guard', status: 'ACTIVE', active: true },
     create: {
       name: 'Chief Guard Suresh',
-      role: Role.GUARD,
+      roleId: 'guard',
+      role: 'Gate Security Guard',
       mobile: '8921578834',
       status: 'ACTIVE',
+      active: true,
     },
   });
 
-  console.log('Seed complete:', {
-    admin: admin.mobile,
-    hod: hod.mobile,
-    tutor: tutor.mobile,
-    student: student.mobile,
-    guard: guard.mobile,
-    departments: departments.map(d => d.code),
-  });
+  console.log('Database configuration seed complete.');
 }
 
 main()
-  .catch(e => {
+  .catch((e) => {
     console.error(e);
     process.exit(1);
   })

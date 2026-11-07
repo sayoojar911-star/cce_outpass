@@ -1,0 +1,24 @@
+export enum OutpassStatus {
+  PENDING_TUTOR = 'PENDING_TUTOR',
+  PENDING_TUTOR_APPROVAL = 'PENDING_TUTOR_APPROVAL',
+  PENDING_HOD = 'PENDING_HOD',
+  PENDING_HOD_APPROVAL = 'PENDING_HOD_APPROVAL',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  CANCELLED = 'CANCELLED',
+  EXITED = 'EXITED',
+  RETURNED = 'RETURNED',
+  COMPLETED = 'COMPLETED',
+  EXPIRED = 'EXPIRED',
+  OVERDUE = 'OVERDUE',
+}
+
+export enum OutpassTypeId {
+  NORMAL = 'normal',
+  EMERGENCY = 'emergency',
+}
+
+export enum StageRoleId {
+  TUTOR = 'tutor',
+  HOD = 'hod',
+}

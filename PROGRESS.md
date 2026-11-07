@@ -60,11 +60,19 @@
   - Flat QR code guarantee preventing optical scan distortion.
   - Static fallback button ("Static Flat" / "Enable Tilt") and automatic disabling on reduced-motion or touch devices.
 - [x] **Print & Download Support**:
-  - Platform print utility in `util/platform_print.dart` triggering browser native print on Flutter Web.
-  - Clean printable preview dialog on Android / mobile.
-  - "Share Summary" action copying a clean, formatted text voucher to clipboard.
+  - Isolated HTML ticket generator in `util/ticket_html_generator.dart` generating clean, print-optimized document with inline SVG QR code (`package:qr`).
+  - Web iframe printing via `window.printCleanTicket(html)` triggering clean browser native print and PDF export with ZERO app navigation, buttons, or browser chrome.
+  - Printable preview dialog on Android / mobile.
+  - "Share Summary" action copying formatted text voucher receipt to clipboard.
+- [x] **Seamless Multi-Screen Integration**:
+  - `student_screen.dart`: Active pass view and history detail screen.
+  - `approver_screen.dart`: "View Official Pass Ticket" dialog on pending approval cards.
+  - `admin_screen.dart`: "Inspect Official Digital Pass" dialog in Outpass Monitor sheet.
+- [x] **Mathematical Notch Precision**:
+  - Replaced hardcoded height percentage with interlocking `_TicketBodyClipper` and `_TicketStubClipper` guaranteeing 100% exact alignment of side circular notches with the dashed perforation line regardless of text length or screen dimensions.
 - [x] **Verification**:
-  - 3 new widget tests added in `apps/mobile/test/ticket_outpass_widget_test.dart` (all 3 passing).
-  - Full mobile test suite: 18 tests passing.
-  - Flutter analyze: 0 issues.
+  - 4 widget and unit tests in `apps/mobile/test/ticket_outpass_widget_test.dart` (all passing).
+  - Full mobile test suite: 19 tests passing.
+  - Flutter analyze: 0 issues found.
+  - API test suite: 51 tests passing across 6 test suites.
   - Web production bundle compiled and synced to `apps/api/public`.

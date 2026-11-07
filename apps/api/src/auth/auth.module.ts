@@ -1,3 +1,4 @@
+import { PhotoStorageService } from './photo-storage.service';
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -22,7 +23,7 @@ import { FirebaseAuthService } from './firebase-auth.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PrismaService, AuditService, JwtAuthGuard, FirebaseAuthService],
-  exports: [AuthService],
+  providers: [AuthService, PrismaService, AuditService, JwtAuthGuard, FirebaseAuthService, PhotoStorageService],
+  exports: [AuthService, PhotoStorageService],
 })
 export class AuthModule {}

@@ -48,17 +48,22 @@ export function verifySignature(message: Buffer, sig: Buffer, publicKeyPem: stri
   }
 }
 
-export function checkWindow(ts: number, nowSec: number): boolean {
-  return Math.abs(nowSec - ts) <= ACCEPT_WINDOW_SECONDS;
+export function checkWindow(ts: number, nowSec: number, windowSeconds = ACCEPT_WINDOW_SECONDS): boolean {
+  return Math.abs(nowSec - ts) <= windowSeconds;
 }
 
 /** Combined verification (used by tests; the scan flow uses the pieces individually). */
-export function verifyQrToken(token: string, publicKeyPem: string, nowSec: number): TokenResult {
+export function verifyQrToken(
+  token: string,
+  publicKeyPem: string,
+  nowSec: number,
+  windowSeconds = ACCEPT_WINDOW_SECONDS,
+): TokenResult {
   const parsed = parseQrToken(token);
   if (!parsed.ok) return parsed;
   if (!verifySignature(parsed.message, parsed.sig, publicKeyPem)) {
     return { ok: false, code: 'QR_INVALID' };
   }
-  if (!checkWindow(parsed.ts, nowSec)) return { ok: false, code: 'QR_STALE' };
+  if (!checkWindow(parsed.ts, nowSec, windowSeconds)) return { ok: false, code: 'QR_STALE' };
   return { ok: true, outpassId: parsed.outpassId, ts: parsed.ts };
 }

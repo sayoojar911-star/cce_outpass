@@ -4,6 +4,7 @@ import {
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -13,11 +14,11 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { Auth } from '../common/auth.decorator';
+import { RequirePermissions } from '../common/auth.decorator';
 import { normalizeMobile } from '../auth/dto';
 
 @Controller('admin')
-@Auth('ADMIN')
+@RequirePermissions('manageUsers', 'manageRoles', 'manageDepartments', 'manageOutpassConfig')
 export class AdminController {
   constructor(
     private readonly prisma: PrismaService,
@@ -26,13 +27,19 @@ export class AdminController {
 
   @Get('dashboard')
   async getDashboard() {
-    const [students, tutors, hods, guards, admins] = await Promise.all([
-      this.prisma.user.count({ where: { role: 'STUDENT', status: 'ACTIVE' } }),
-      this.prisma.user.count({ where: { role: 'TUTOR', status: 'ACTIVE' } }),
-      this.prisma.user.count({ where: { role: 'HOD', status: 'ACTIVE' } }),
-      this.prisma.user.count({ where: { role: 'GUARD', status: 'ACTIVE' } }),
-      this.prisma.user.count({ where: { role: 'ADMIN', status: 'ACTIVE' } }),
+    const [totalUsers, activeUsers, roles, departments] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.count({ where: { active: true, status: 'ACTIVE' } }),
+      this.prisma.role.findMany({ select: { id: true, name: true } }),
+      this.prisma.department.count({ where: { active: true } }),
     ]);
+
+    const roleCounts: Record<string, number> = {};
+    for (const r of roles) {
+      roleCounts[r.id] = await this.prisma.user.count({
+        where: { roleId: r.id, active: true },
+      });
+    }
 
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -54,12 +61,10 @@ export class AdminController {
 
     return {
       counts: {
-        STUDENT: students,
-        TUTOR: tutors,
-        HOD: hods,
-        GUARD: guards,
-        ADMIN: admins,
-        total: students + tutors + hods + guards + admins,
+        total: totalUsers,
+        active: activeUsers,
+        roles: roleCounts,
+        departments,
       },
       todayOutpasses: statusCounts,
       recentActivity: recentActivity.map((a) => ({
@@ -69,26 +74,52 @@ export class AdminController {
     };
   }
 
+  // ==========================================
+  // USERS MANAGEMENT
+  // ==========================================
+
   @Get('users')
   async listUsers() {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       include: {
+        roleRef: true,
+        deptRef: true,
+        tutor: { select: { id: true, name: true, mobile: true } },
         student: {
-          include: {
-            tutor: true,
-          },
+          include: { tutor: { select: { id: true, name: true, mobile: true } } },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      mobile: u.mobile,
+      roleId: u.roleId || 'pending',
+      role: u.roleRef?.name || u.roleId || 'Pending',
+      permissions: u.roleRef?.permissions || [],
+      departmentId: u.departmentId,
+      department: u.deptRef?.code || u.department || null,
+      year: u.year,
+      division: u.division,
+      tutorId: u.tutorId || u.student?.tutorId,
+      tutor: u.tutor || u.student?.tutor,
+      active: u.active ?? (u.status === 'ACTIVE'),
+      status: u.status,
+      createdAt: u.createdAt,
+    }));
   }
 
   private async validateAcademicFields(
     dto: {
       name?: string;
       mobile?: string;
-      role: 'STUDENT' | 'TUTOR' | 'HOD' | 'GUARD' | 'ADMIN';
+      roleId?: string;
+      role?: string;
       department?: string | null;
+      departmentId?: string | null;
       year?: number | null;
       division?: string | null;
       tutorId?: string | null;
@@ -96,15 +127,19 @@ export class AdminController {
     },
     existingUserId?: string,
   ) {
-    if (dto.name !== undefined && !dto.name?.trim()) {
-      throw new BadRequestException('Name is required');
-    }
+    const roleIdLower = (dto.roleId || '').toLowerCase();
+    const roleStr = (dto.role || '').toUpperCase();
+    const isHodRole = roleIdLower === 'hod' || roleStr === 'HOD' || roleStr.includes('HEAD OF DEPARTMENT');
+    const isGuardRole = roleIdLower === 'guard' || roleStr === 'GUARD' || roleStr.includes('GUARD');
+    const isAdminRole = roleIdLower === 'admin' || roleStr === 'ADMIN' || roleStr.includes('ADMIN');
+    const isTutorRole = roleIdLower === 'tutor' || roleStr === 'TUTOR' || roleStr.includes('TUTOR');
+    const isStudentRole = roleIdLower === 'student' || roleStr === 'STUDENT' || roleStr.includes('STUDENT');
+    const rawRole = isStudentRole ? 'STUDENT' : isTutorRole ? 'TUTOR' : isHodRole ? 'HOD' : (dto.role || dto.roleId || '').toUpperCase();
 
-    const role = dto.role;
-
-    if (role === 'GUARD' || role === 'ADMIN') {
+    if (isGuardRole || isAdminRole) {
       return {
         department: null,
+        departmentId: null,
         year: null,
         division: null,
         tutorId: null,
@@ -112,35 +147,44 @@ export class AdminController {
       };
     }
 
-    if (role === 'HOD') {
-      if (!dto.department || !dto.department.trim()) {
+    if (isHodRole) {
+      const deptCode = dto.department?.trim()?.toUpperCase();
+      if (!deptCode && !dto.departmentId) {
         throw new BadRequestException('Department is required for HOD');
       }
       const dept = await this.prisma.department.findFirst({
-        where: { code: dto.department.trim().toUpperCase() },
+        where: dto.departmentId
+          ? { id: dto.departmentId }
+          : { code: deptCode },
       });
       if (!dept) {
-        throw new BadRequestException(`Department ${dto.department} does not exist`);
+        throw new BadRequestException(`Department ${dto.department || dto.departmentId} does not exist`);
       }
 
-      // Check single active HOD per department
+      // Ignore inactive, deactive, or deleted users when checking existing HOD
       const existingHod = await this.prisma.user.findFirst({
         where: {
-          role: 'HOD',
+          OR: [
+            { roleId: 'hod' },
+            { role: 'HOD' },
+            { role: { contains: 'HOD', mode: 'insensitive' } },
+            { role: { contains: 'Head of Department', mode: 'insensitive' } },
+            ...(dept.hodUserId ? [{ id: dept.hodUserId }] : []),
+          ],
           department: dept.code,
+          active: true,
           status: 'ACTIVE',
           ...(existingUserId ? { NOT: { id: existingUserId } } : {}),
         },
       });
 
-      if (existingHod) {
-        if (!dto.replaceHod) {
-          throw new BadRequestException(`${dept.code} already has a HOD: ${existingHod.name}`);
-        }
+      if (existingHod && !dto.replaceHod) {
+        throw new BadRequestException(`${dept.code} already has an HOD: ${existingHod.name} (ACTIVE)`);
       }
 
       return {
         department: dept.code,
+        departmentId: dept.id,
         year: null,
         division: null,
         tutorId: null,
@@ -148,27 +192,30 @@ export class AdminController {
       };
     }
 
-    if (role === 'TUTOR' || role === 'STUDENT') {
-      if (!dto.department || !dto.department.trim()) {
-        throw new BadRequestException(`Department is required for ${role}`);
+    if (isTutorRole || isStudentRole) {
+      const deptCode = dto.department?.trim()?.toUpperCase();
+      if (!deptCode && !dto.departmentId) {
+        throw new BadRequestException(`Department is required for ${rawRole}`);
       }
       const dept = await this.prisma.department.findFirst({
-        where: { code: dto.department.trim().toUpperCase() },
+        where: dto.departmentId
+          ? { id: dto.departmentId }
+          : { code: deptCode },
         include: { divisions: true },
       });
       if (!dept) {
-        throw new BadRequestException(`Department ${dto.department} does not exist`);
+        throw new BadRequestException(`Department ${dto.department || dto.departmentId} does not exist`);
       }
 
       const parsedYear = Number(dto.year);
       if (!parsedYear || parsedYear < 1 || parsedYear > 4) {
-        throw new BadRequestException(`Year (1 to 4) is required for ${role}`);
+        throw new BadRequestException(`Year (1 to 4) is required for ${rawRole}`);
       }
 
       let division: string | null = null;
-      if (dept.divisions.length > 0) {
+      if (dept.divisions && dept.divisions.length > 0) {
         if (!dto.division || !dto.division.trim()) {
-          throw new BadRequestException(`Division is required for ${dept.code} ${role}`);
+          throw new BadRequestException(`Division is required for ${dept.code} ${rawRole}`);
         }
         const match = dept.divisions.find(
           (d) => d.name.toUpperCase() === dto.division!.trim().toUpperCase(),
@@ -186,24 +233,25 @@ export class AdminController {
         typeof dto.tutorId === 'string' && dto.tutorId.trim().length > 0
           ? dto.tutorId.trim()
           : null;
-      if (role === 'STUDENT' && cleanTutorId) {
+      if (rawRole === 'STUDENT' && cleanTutorId) {
         const tutor = await this.prisma.user.findFirst({
-          where: { id: cleanTutorId, role: 'TUTOR', status: 'ACTIVE' },
+          where: { id: cleanTutorId, active: true },
+          include: { roleRef: true },
         });
         if (!tutor) {
-          throw new BadRequestException('Selected tutor is not active or not a TUTOR');
+          throw new BadRequestException('Selected tutor is not active or does not exist');
         }
-        if (tutor.department !== dept.code) {
+        if (tutor.department && tutor.department !== dept.code) {
           throw new BadRequestException(
             `Tutor belongs to department ${tutor.department}, not ${dept.code}`,
           );
         }
-        if (tutor.year !== parsedYear) {
+        if (tutor.year && tutor.year !== parsedYear) {
           throw new BadRequestException(
             `Tutor belongs to year ${tutor.year}, not year ${parsedYear}`,
           );
         }
-        if (dept.divisions.length > 0 && tutor.division !== division) {
+        if (dept.divisions && dept.divisions.length > 0 && tutor.division && tutor.division !== division) {
           throw new BadRequestException(
             `Tutor belongs to division ${tutor.division}, not division ${division}`,
           );
@@ -213,6 +261,7 @@ export class AdminController {
 
       return {
         department: dept.code,
+        departmentId: dept.id,
         year: parsedYear,
         division,
         tutorId,
@@ -220,7 +269,14 @@ export class AdminController {
       };
     }
 
-    throw new BadRequestException(`Invalid role: ${role}`);
+    return {
+      department: dto.department || null,
+      departmentId: dto.departmentId || null,
+      year: dto.year || null,
+      division: dto.division || null,
+      tutorId: dto.tutorId || null,
+      existingHodToReplace: null,
+    };
   }
 
   @Post('users')
@@ -230,30 +286,49 @@ export class AdminController {
     dto: {
       name: string;
       mobile: string;
-      role: 'STUDENT' | 'TUTOR' | 'HOD' | 'GUARD' | 'ADMIN';
-      department?: string;
-      year?: number;
-      division?: string;
-      tutorId?: string;
+      email?: string;
+      roleId?: string;
+      role?: string;
+      departmentId?: string | null;
+      department?: string | null;
+      year?: number | null;
+      division?: string | null;
+      tutorId?: string | null;
       registerNo?: string;
       semester?: number;
       replaceHod?: boolean;
+      active?: boolean;
     },
   ) {
-    // Log incoming request payload for debugging
-    // eslint-disable-next-line no-console
-    console.log('createUser DTO:', JSON.stringify(dto));
-    if (!dto.name || !dto.name.trim()) {
-      throw new BadRequestException('Name is required');
-    }
+    const name = dto.name?.trim();
+    if (!name) throw new BadRequestException('Name is required');
+
     const mobile = normalizeMobile(dto.mobile);
     if (!/^\d{10}$/.test(mobile)) {
       throw new BadRequestException('Mobile must be exactly 10 digits');
     }
 
-    const existing = await this.prisma.user.findUnique({ where: { mobile } });
-    if (existing) {
+    const exists = await this.prisma.user.findUnique({ where: { mobile } });
+    if (exists) {
       throw new ConflictException(`A user with mobile ${mobile} already exists`);
+    }
+
+    const targetRoleId = (dto.roleId || dto.role?.toLowerCase() || 'pending').trim();
+
+    // Validate role exists or lookup case-insensitively
+    let role = await this.prisma.role.findUnique({ where: { id: targetRoleId } });
+    if (!role && dto.role) {
+      role = await this.prisma.role.findFirst({
+        where: {
+          OR: [
+            { id: { equals: dto.role.toLowerCase() } },
+            { name: { equals: dto.role, mode: 'insensitive' } },
+          ],
+        },
+      });
+    }
+    if (!role) {
+      throw new BadRequestException(`Role ID "${targetRoleId}" does not exist`);
     }
 
     const validated = await this.validateAcademicFields(dto);
@@ -262,53 +337,66 @@ export class AdminController {
       if (validated.existingHodToReplace && dto.replaceHod) {
         await tx.user.update({
           where: { id: validated.existingHodToReplace.id },
-          data: { status: 'INACTIVE' },
+          data: { status: 'INACTIVE', active: false },
         });
       }
 
-      const user = await tx.user.create({
+      const u = await tx.user.create({
         data: {
-          name: dto.name.trim(),
+          name,
           mobile,
-          role: dto.role,
-          department: validated.department,
-          year: validated.year,
-          division: validated.division,
-          status: 'ACTIVE',
+          email: dto.email?.trim() || null,
+          roleId: role.id,
+          role: dto.role || role.id.toUpperCase(),
+          departmentId: validated.departmentId || null,
+          department: validated.department || null,
+          year: validated.year || null,
+          division: validated.division?.trim() || null,
+          tutorId: validated.tutorId || null,
+          active: dto.active !== false,
+          status: dto.active === false ? 'DEACTIVATED' : 'ACTIVE',
         },
+        include: { roleRef: true, deptRef: true, tutor: true },
       });
 
-      if (dto.role === 'HOD' && validated.department) {
-        await tx.department.update({
-          where: { code: validated.department },
-          data: { hodId: user.id },
+      const isNewHod = role.id === 'hod' || (dto.role || '').toUpperCase().includes('HOD') || (dto.role || '').toUpperCase().includes('HEAD OF DEPARTMENT');
+      if (isNewHod && (validated.department || validated.departmentId)) {
+        await tx.department.updateMany({
+          where: {
+            OR: [
+              ...(validated.departmentId ? [{ id: validated.departmentId }] : []),
+              ...(validated.department ? [{ code: validated.department }] : []),
+            ],
+          },
+          data: { hodId: u.id, hodUserId: u.id },
         });
       }
 
-      if (dto.role === 'STUDENT') {
+      // Maintain Student row if student permission exists
+      if (role.permissions.includes('createOutpass') || dto.role === 'STUDENT' || role.id === 'student') {
         await tx.student.create({
           data: {
-            userId: user.id,
-            registerNo: dto.registerNo || `CCE${Date.now().toString().slice(-6)}`,
-            department: validated.department!,
-            year: validated.year!,
-            division: validated.division,
-            semester: dto.semester || ((validated.year! - 1) * 2 + 1),
-            tutorId: validated.tutorId,
+            userId: u.id,
+            registerNo: dto.registerNo || `REG-${mobile.slice(-4)}-${Date.now().toString().slice(-4)}`,
+            department: validated.department || 'GENERAL',
+            semester: dto.semester || (validated.year ? (validated.year - 1) * 2 + 1 : 1),
+            year: validated.year || null,
+            division: validated.division?.trim() || null,
+            tutorId: validated.tutorId || null,
           },
         });
       }
 
-      return user;
+      return u;
     });
 
     await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
+      req.user?.userId,
+      req.user?.roleId || 'admin',
       'USER_CREATED',
       'User',
       created.id,
-      { name: created.name, mobile: created.mobile, role: created.role },
+      { name, mobile, roleId: role.id, departmentId: validated.departmentId },
     );
 
     return created;
@@ -322,143 +410,130 @@ export class AdminController {
     dto: {
       name?: string;
       mobile?: string;
-      role?: 'STUDENT' | 'TUTOR' | 'HOD' | 'GUARD' | 'ADMIN';
+      email?: string;
+      roleId?: string;
+      role?: string;
+      departmentId?: string | null;
       department?: string | null;
       year?: number | null;
       division?: string | null;
-      status?: string;
-      semester?: number;
       tutorId?: string | null;
-      registerNo?: string;
-      replaceHod?: boolean;
+      active?: boolean;
     },
   ) {
-    const user = await this.prisma.user.findUnique({
+    const existing = await this.prisma.user.findUnique({
       where: { id },
-      include: { student: true },
+      include: { roleRef: true },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!existing) throw new NotFoundException('User not found');
 
-    const effectiveRole = dto.role || user.role;
+    const effectiveRoleId = dto.roleId || (dto.role ? dto.role.toLowerCase() : undefined);
 
-    // Protect against the admin locking themselves out:
-    // the last active admin cannot be deleted, deactivated, or demoted.
-    if (user.role === 'ADMIN') {
-      const isDemoting = dto.role && dto.role !== 'ADMIN';
-      const isDeactivating = dto.status && dto.status !== 'ACTIVE';
-      if (isDemoting || isDeactivating) {
-        const activeAdminCount = await this.prisma.user.count({
-          where: { role: 'ADMIN', status: 'ACTIVE' },
-        });
-        if (activeAdminCount <= 1) {
-          throw new BadRequestException(
-            'Cannot deactivate or demote the last active admin',
-          );
-        }
-      }
+    // Rule: Users must not be able to change their own role
+    if (
+      req.user?.userId === id &&
+      effectiveRoleId !== undefined &&
+      effectiveRoleId !== existing.roleId
+    ) {
+      throw new ForbiddenException('Users are not permitted to modify their own role');
     }
 
-    let mobile = user.mobile;
-    if (dto.mobile) {
-      const norm = normalizeMobile(dto.mobile);
-      if (!/^\d{10}$/.test(norm)) {
-        throw new BadRequestException('Mobile must be exactly 10 digits');
-      }
-      const conflict = await this.prisma.user.findFirst({
-        where: { mobile: norm, NOT: { id } },
+    // Rule: Prevent removing the last admin
+    if (
+      existing.roleId === 'admin' &&
+      ((effectiveRoleId !== undefined && effectiveRoleId !== 'admin') || dto.active === false)
+    ) {
+      const activeAdminCount = await this.prisma.user.count({
+        where: { roleId: 'admin', active: true, status: 'ACTIVE' },
       });
-      if (conflict) throw new ConflictException(`Mobile ${norm} already in use`);
-      mobile = norm;
+      if (activeAdminCount <= 1) {
+        throw new BadRequestException('Cannot demote or deactivate the last active administrator');
+      }
     }
 
-    const validated = await this.validateAcademicFields(
-      {
-        name: dto.name ?? user.name,
-        role: effectiveRole,
-        department: dto.department !== undefined ? dto.department : user.department,
-        year: dto.year !== undefined ? dto.year : user.year,
-        division: dto.division !== undefined ? dto.division : user.division,
-        tutorId: dto.tutorId !== undefined ? dto.tutorId : user.student?.tutorId,
-        replaceHod: dto.replaceHod,
-      },
-      id,
-    );
+    // Resolve department
+    let departmentId = dto.departmentId !== undefined ? dto.departmentId : existing.departmentId;
+    let deptCode = dto.department !== undefined ? dto.department : existing.department;
+    if (dto.departmentId) {
+      const d = await this.prisma.department.findUnique({ where: { id: dto.departmentId } });
+      if (d) deptCode = d.code;
+    } else if (dto.department) {
+      const d = await this.prisma.department.findUnique({ where: { code: dto.department } });
+      if (d) departmentId = d.id;
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      if (validated.existingHodToReplace && dto.replaceHod) {
-        await tx.user.update({
-          where: { id: validated.existingHodToReplace.id },
-          data: { status: 'INACTIVE' },
-        });
+      let roleName = existing.role;
+      if (effectiveRoleId) {
+        const role = await tx.role.findUnique({ where: { id: effectiveRoleId } });
+        if (role) roleName = role.name;
       }
-
-      // If user was previously HOD of a department and changed role or dept, clear old dept hodId
-      if (user.role === 'HOD' && (effectiveRole !== 'HOD' || validated.department !== user.department)) {
-        await tx.department.updateMany({
-          where: { hodId: id },
-          data: { hodId: null },
-        });
-      }
-
-      const userData: any = {
-        name: dto.name ? dto.name.trim() : user.name,
-        mobile,
-        role: effectiveRole,
-        department: validated.department,
-        year: validated.year,
-        division: validated.division,
-      };
-      if (dto.status) userData.status = dto.status;
 
       const u = await tx.user.update({
         where: { id },
-        data: userData,
+        data: {
+          name: dto.name !== undefined ? dto.name.trim() : undefined,
+          mobile: dto.mobile !== undefined ? normalizeMobile(dto.mobile) : undefined,
+          email: dto.email !== undefined ? (dto.email.trim() || null) : undefined,
+          roleId: effectiveRoleId !== undefined ? effectiveRoleId : undefined,
+          role: roleName,
+          departmentId: departmentId || null,
+          department: deptCode || null,
+          year: dto.year !== undefined ? dto.year : undefined,
+          division: dto.division !== undefined ? (dto.division?.trim() || null) : undefined,
+          tutorId: dto.tutorId !== undefined ? (dto.tutorId || null) : undefined,
+          active: dto.active !== undefined ? dto.active : undefined,
+          status: dto.active === false ? 'DEACTIVATED' : 'ACTIVE',
+        },
+        include: { roleRef: true, deptRef: true, tutor: true },
       });
 
-      if (effectiveRole === 'HOD' && validated.department) {
-        await tx.department.update({
-          where: { code: validated.department },
-          data: { hodId: id },
+      // Update Student row if exists
+      const student = await tx.student.findUnique({ where: { userId: id } });
+      if (student) {
+        await tx.student.update({
+          where: { userId: id },
+          data: {
+            department: deptCode || student.department,
+            year: dto.year !== undefined ? dto.year : student.year,
+            division: dto.division !== undefined ? (dto.division?.trim() || null) : student.division,
+            tutorId: dto.tutorId !== undefined ? (dto.tutorId || null) : student.tutorId,
+          },
+        });
+      } else if (dto.roleId === 'student') {
+        await tx.student.create({
+          data: {
+            userId: id,
+            registerNo: `REG-${u.mobile.slice(-4)}`,
+            department: deptCode || 'GENERAL',
+            semester: dto.year ? dto.year * 2 - 1 : 1,
+            year: dto.year || null,
+            division: dto.division?.trim() || null,
+            tutorId: dto.tutorId || null,
+          },
         });
       }
 
-      // Handle student record transitions
-      if (effectiveRole === 'STUDENT') {
-        if (!user.student) {
-          await tx.student.create({
-            data: {
-              userId: id,
-              registerNo: dto.registerNo || `CCE${Date.now().toString().slice(-6)}`,
-              department: validated.department!,
-              year: validated.year!,
-              division: validated.division,
-              semester: dto.semester || ((validated.year! - 1) * 2 + 1),
-              tutorId: validated.tutorId,
-            },
-          });
-        } else {
-          await tx.student.update({
-            where: { userId: id },
-            data: {
-              department: validated.department!,
-              year: validated.year!,
-              division: validated.division,
-              tutorId: validated.tutorId,
-              semester: dto.semester ?? user.student.semester,
-              registerNo: dto.registerNo ?? user.student.registerNo,
-            },
-          });
-        }
-      } else if (user.student) {
-        await tx.student.deleteMany({ where: { userId: id } });
+      const safeRoleUpper = (roleName ?? '').toUpperCase();
+      const isUpdatedHod = (effectiveRoleId || existing.roleId) === 'hod' || safeRoleUpper.includes('HOD') || safeRoleUpper.includes('HEAD OF DEPARTMENT');
+      if (isUpdatedHod && (deptCode || departmentId)) {
+        await tx.department.updateMany({
+          where: {
+            OR: [
+              ...(departmentId ? [{ id: departmentId }] : []),
+              ...(deptCode ? [{ code: deptCode }] : []),
+            ],
+          },
+          data: { hodId: u.id, hodUserId: u.id },
+        });
       }
 
       return u;
     });
 
     await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
+      req.user?.userId,
+      req.user?.roleId || 'admin',
       'USER_UPDATED',
       'User',
       id,
@@ -473,30 +548,23 @@ export class AdminController {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
-    if (user.role === 'ADMIN') {
+    if (user.roleId === 'admin') {
       const activeAdminCount = await this.prisma.user.count({
-        where: { role: 'ADMIN', status: 'ACTIVE' },
+        where: { roleId: 'admin', active: true, status: 'ACTIVE' },
       });
       if (activeAdminCount <= 1) {
-        throw new BadRequestException('Cannot delete the last active admin');
+        throw new BadRequestException('Cannot delete the last active administrator');
       }
-    }
-
-    if (user.role === 'HOD') {
-      await this.prisma.department.updateMany({
-        where: { hodId: id },
-        data: { hodId: null },
-      });
     }
 
     await this.prisma.user.update({
       where: { id },
-      data: { status: 'DELETED' },
+      data: { active: false, status: 'DELETED' },
     });
 
     await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
+      req.user?.userId,
+      req.user?.roleId || 'admin',
       'USER_DELETED',
       'User',
       id,
@@ -506,77 +574,172 @@ export class AdminController {
     return { ok: true };
   }
 
-  @Post('users/bulk')
-  async bulkAddUsers(
+  // ==========================================
+  // ROLES & PERMISSIONS MANAGEMENT
+  // ==========================================
+
+  @Get('roles')
+  async listRoles() {
+    const roles = await this.prisma.role.findMany({
+      include: {
+        _count: { select: { users: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return roles.map((r) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      permissions: r.permissions,
+      isSystem: r.isSystem,
+      active: r.active,
+      userCount: r._count.users,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  @Post('roles')
+  async createRole(
     @Req() req: any,
-    @Body() dto: { rows: Array<{ name: string; phone: string; role: string; department: string }> },
+    @Body()
+    dto: {
+      id?: string;
+      name: string;
+      description?: string;
+      permissions: string[];
+    },
   ) {
-    let count = 0;
-    const errors: Array<{ row: number; error: string }> = [];
+    const name = dto.name?.trim();
+    if (!name) throw new BadRequestException('Role name is required');
 
-    for (let i = 0; i < (dto.rows || []).length; i++) {
-      const row = dto.rows[i];
-      try {
-        const mobile = normalizeMobile(row.phone);
-        if (!/^\d{10}$/.test(mobile)) {
-          errors.push({ row: i + 1, error: `Invalid mobile number: ${row.phone}` });
-          continue;
-        }
+    const id = (dto.id?.trim() || name.toLowerCase().replace(/[^a-z0-9_-]/g, '-')).trim();
 
-        const exists = await this.prisma.user.findUnique({ where: { mobile } });
-        if (exists) {
-          errors.push({ row: i + 1, error: `Mobile ${mobile} already exists` });
-          continue;
-        }
+    const exists = await this.prisma.role.findUnique({ where: { id } });
+    if (exists) {
+      throw new ConflictException(`Role with ID "${id}" already exists`);
+    }
 
-        const role = (row.role?.toUpperCase() as any) || 'STUDENT';
-        await this.prisma.$transaction(async (tx) => {
-          const u = await tx.user.create({
-            data: {
-              name: row.name,
-              mobile,
-              role,
-              department: row.department || 'CSE',
-              status: 'ACTIVE',
-            },
-          });
+    const created = await this.prisma.role.create({
+      data: {
+        id,
+        name,
+        description: dto.description?.trim() || null,
+        permissions: Array.isArray(dto.permissions) ? dto.permissions : [],
+        isSystem: false,
+        active: true,
+      },
+    });
 
-          if (role === 'STUDENT') {
-            await tx.student.create({
-              data: {
-                userId: u.id,
-                registerNo: `CCE${Date.now().toString().slice(-6)}${i}`,
-                department: row.department || 'CSE',
-                semester: 1,
-              },
-            });
-          }
-        });
-        count++;
-      } catch (err: any) {
-        errors.push({ row: i + 1, error: err.message || 'Error creating user' });
+    await this.audit.append(
+      req.user?.userId,
+      req.user?.roleId || 'admin',
+      'ROLE_CREATED',
+      'Role',
+      created.id,
+      { name, permissions: dto.permissions },
+    );
+
+    return created;
+  }
+
+  @Post('roles/:id')
+  async updateRole(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      name?: string;
+      description?: string;
+      permissions?: string[];
+      active?: boolean;
+    },
+  ) {
+    const role = await this.prisma.role.findUnique({ where: { id } });
+    if (!role) throw new NotFoundException('Role not found');
+
+    if (role.id === 'admin') {
+      if (dto.active === false) {
+        throw new BadRequestException('The System Administrator role cannot be disabled');
+      }
+      if (dto.permissions && !dto.permissions.includes('manageRoles')) {
+        throw new BadRequestException('The System Administrator role must retain manageRoles permission');
       }
     }
 
+    const updated = await this.prisma.role.update({
+      where: { id },
+      data: {
+        name: dto.name !== undefined ? dto.name.trim() : undefined,
+        description: dto.description !== undefined ? (dto.description?.trim() || null) : undefined,
+        permissions: dto.permissions !== undefined ? dto.permissions : undefined,
+        active: dto.active !== undefined ? dto.active : undefined,
+      },
+    });
+
     await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
-      'BULK_USERS_ADDED',
-      'User',
-      null,
-      { addedCount: count, errorsCount: errors.length },
+      req.user?.userId,
+      req.user?.roleId || 'admin',
+      'ROLE_UPDATED',
+      'Role',
+      id,
+      { changes: dto },
     );
 
-    return { count, errors };
+    return updated;
   }
+
+  @Delete('roles/:id')
+  async deleteRole(@Req() req: any, @Param('id') id: string) {
+    return this.removeRole(req, id);
+  }
+
+  @Post('roles/:id/delete')
+  async postDeleteRole(@Req() req: any, @Param('id') id: string) {
+    return this.removeRole(req, id);
+  }
+
+  private async removeRole(req: any, id: string) {
+    const role = await this.prisma.role.findUnique({ where: { id } });
+    if (!role) throw new NotFoundException('Role not found');
+
+    if (role.isSystem || role.id === 'admin') {
+      throw new BadRequestException('System protected roles cannot be deleted');
+    }
+
+    const assignedCount = await this.prisma.user.count({
+      where: { roleId: id, active: true },
+    });
+    if (assignedCount > 0) {
+      throw new BadRequestException(
+        `Cannot delete role "${role.name}": ${assignedCount} active user(s) currently hold this role`,
+      );
+    }
+
+    await this.prisma.role.delete({ where: { id } });
+
+    await this.audit.append(
+      req.user?.userId,
+      req.user?.roleId || 'admin',
+      'ROLE_DELETED',
+      'Role',
+      id,
+      { name: role.name },
+    );
+
+    return { ok: true };
+  }
+
+  // ==========================================
+  // DEPARTMENTS & HOD MANAGEMENT
+  // ==========================================
 
   @Get('departments')
   async listDepartments() {
     return this.prisma.department.findMany({
       include: {
-        divisions: {
-          orderBy: { name: 'asc' },
-        },
+        divisions: { orderBy: { name: 'asc' } },
+        hodUser: { select: { id: true, name: true, mobile: true } },
       },
       orderBy: { code: 'asc' },
     });
@@ -585,31 +748,46 @@ export class AdminController {
   @Post('departments')
   async addOrUpdateDepartment(
     @Req() req: any,
-    @Body() dto: { code: string; name: string; hodId?: string },
+    @Body() dto: { id?: string; code: string; name: string; hodUserId?: string | null },
   ) {
-    const dept = await this.prisma.department.upsert({
-      where: { code: dto.code.toUpperCase() },
-      update: {
-        name: dto.name,
-        hodId: dto.hodId,
-      },
-      create: {
-        code: dto.code.toUpperCase(),
-        name: dto.name,
-        hodId: dto.hodId,
-      },
-      include: {
-        divisions: true,
-      },
+    const code = dto.code.trim().toUpperCase();
+    const name = dto.name.trim();
+    if (!code || !name) throw new BadRequestException('Department code and name are required');
+
+    let dept = await this.prisma.department.findFirst({
+      where: { OR: [{ code }, ...(dto.id ? [{ id: dto.id }] : [])] },
     });
 
+    if (dept) {
+      dept = await this.prisma.department.update({
+        where: { id: dept.id },
+        data: {
+          code,
+          name,
+          hodUserId: dto.hodUserId || null,
+          hodId: dto.hodUserId || null,
+        },
+        include: { divisions: true, hodUser: true },
+      });
+    } else {
+      dept = await this.prisma.department.create({
+        data: {
+          code,
+          name,
+          hodUserId: dto.hodUserId || null,
+          hodId: dto.hodUserId || null,
+        },
+        include: { divisions: true, hodUser: true },
+      });
+    }
+
     await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
+      req.user?.userId,
+      req.user?.roleId || 'admin',
       'DEPARTMENT_SAVED',
       'Department',
       dept.id,
-      { code: dept.code, name: dept.name, hodId: dept.hodId },
+      { code, name, hodUserId: dto.hodUserId },
     );
 
     return dept;
@@ -629,58 +807,31 @@ export class AdminController {
     const name = (dto.name || '').trim().toUpperCase();
     if (!name) throw new BadRequestException('Division name is required');
 
-    const existing = await this.prisma.division.findUnique({
+    const division = await this.prisma.division.upsert({
       where: {
         departmentId_name: {
           departmentId: dept.id,
           name,
         },
       },
-    });
-    if (existing) {
-      throw new BadRequestException(`Division ${name} already exists for ${dept.code}`);
-    }
-
-    const division = await this.prisma.division.create({
-      data: {
-        name,
+      update: {},
+      create: {
         departmentId: dept.id,
+        name,
       },
     });
-
-    await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
-      'DIVISION_CREATED',
-      'Division',
-      division.id,
-      { department: dept.code, name: division.name },
-    );
 
     return division;
   }
 
-  @Delete('departments/:id/divisions/:divisionId')
+  @Post('departments/:id/divisions/:divisionId/delete')
   async deleteDivision(
     @Req() req: any,
     @Param('id') id: string,
     @Param('divisionId') divisionId: string,
   ) {
-    return this.removeDivision(req, id, divisionId);
-  }
-
-  @Post('departments/:id/divisions/:divisionId/delete')
-  async postDeleteDivision(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Param('divisionId') divisionId: string,
-  ) {
-    return this.removeDivision(req, id, divisionId);
-  }
-
-  private async removeDivision(req: any, deptId: string, divisionId: string) {
     const dept = await this.prisma.department.findFirst({
-      where: { OR: [{ id: deptId }, { code: deptId.toUpperCase() }] },
+      where: { OR: [{ id }, { code: id.toUpperCase() }] },
     });
     if (!dept) throw new NotFoundException('Department not found');
 
@@ -692,159 +843,158 @@ export class AdminController {
     });
     if (!division) throw new NotFoundException('Division not found');
 
-    const peopleCount = await this.prisma.user.count({
-      where: {
-        department: dept.code,
-        division: division.name,
-        status: { not: 'DELETED' },
-      },
-    });
-    if (peopleCount > 0) {
-      throw new BadRequestException(
-        `Cannot delete division ${division.name}: ${peopleCount} active person(s) assigned to it`,
-      );
-    }
-
-    await this.prisma.division.delete({
-      where: { id: division.id },
-    });
-
-    await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
-      'DIVISION_DELETED',
-      'Division',
-      division.id,
-      { department: dept.code, name: division.name },
-    );
-
+    await this.prisma.division.delete({ where: { id: division.id } });
     return { ok: true };
   }
 
-  @Delete('departments/:id')
-  async deleteDepartment(@Req() req: any, @Param('id') id: string) {
-    return this.removeDepartment(req, id);
-  }
-
   @Post('departments/:id/delete')
-  async postDeleteDepartment(@Req() req: any, @Param('id') id: string) {
-    return this.removeDepartment(req, id);
-  }
-
-  private async removeDepartment(req: any, id: string) {
+  async deleteDepartment(@Req() req: any, @Param('id') id: string) {
     const dept = await this.prisma.department.findFirst({
       where: { OR: [{ id }, { code: id.toUpperCase() }] },
     });
     if (!dept) throw new NotFoundException('Department not found');
 
-    const peopleCount = await this.prisma.user.count({
-      where: { department: dept.code, status: { not: 'DELETED' } },
+    const count = await this.prisma.user.count({
+      where: { departmentId: dept.id, active: true },
     });
-    if (peopleCount > 0) {
+    if (count > 0) {
       throw new BadRequestException(
-        `Cannot delete department ${dept.code}: ${peopleCount} active person(s) belong to it.`,
+        `Cannot delete department ${dept.code}: ${count} active user(s) assigned to it.`,
       );
     }
 
     await this.prisma.department.delete({ where: { id: dept.id } });
-
-    await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
-      'DEPARTMENT_DELETED',
-      'Department',
-      dept.id,
-      { code: dept.code },
-    );
-
     return { ok: true };
   }
 
-  @Post('tutors/assign')
-  async assignTutors(
-    @Req() req: any,
-    @Body() dto: { studentIds: string[]; tutorId: string | null },
-  ) {
-    if (!dto.studentIds || dto.studentIds.length === 0) {
-      throw new BadRequestException('studentIds must be provided');
-    }
+  // ==========================================
+  // PURPOSE CATEGORIES MANAGEMENT
+  // ==========================================
 
-    if (dto.tutorId) {
-      const tutor = await this.prisma.user.findFirst({
-        where: { id: dto.tutorId, role: 'TUTOR', status: 'ACTIVE' },
+  @Get('purpose-categories')
+  async listPurposeCategories() {
+    return this.prisma.purposeCategory.findMany({
+      orderBy: { label: 'asc' },
+    });
+  }
+
+  @Post('purpose-categories')
+  async savePurposeCategory(
+    @Req() req: any,
+    @Body() dto: { id?: string; label: string; active?: boolean },
+  ) {
+    const label = dto.label?.trim();
+    if (!label) throw new BadRequestException('Category label is required');
+
+    let cat;
+    if (dto.id) {
+      cat = await this.prisma.purposeCategory.update({
+        where: { id: dto.id },
+        data: { label, active: dto.active !== false },
       });
-      if (!tutor) {
-        throw new BadRequestException('Selected tutor is not active or not a TUTOR');
-      }
+    } else {
+      cat = await this.prisma.purposeCategory.upsert({
+        where: { label },
+        update: { active: dto.active !== false },
+        create: { label, active: dto.active !== false },
+      });
     }
 
-    const res = await this.prisma.student.updateMany({
-      where: { userId: { in: dto.studentIds } },
-      data: { tutorId: dto.tutorId },
-    });
-
     await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
-      'TUTORS_ASSIGNED',
-      'Student',
-      null,
-      { count: res.count, tutorId: dto.tutorId, studentIds: dto.studentIds },
+      req.user?.userId,
+      req.user?.roleId || 'admin',
+      'PURPOSE_CATEGORY_SAVED',
+      'PurposeCategory',
+      cat.id,
+      { label, active: cat.active },
     );
 
-    return { count: res.count };
+    return cat;
   }
 
-  @Get('outpasses')
-  async listOutpasses() {
-    const outpasses = await this.prisma.outpassRequest.findMany({
-      include: {
-        student: {
-          include: {
-            user: true,
-            tutor: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
+  @Post('purpose-categories/:id/delete')
+  async deletePurposeCategory(@Req() req: any, @Param('id') id: string) {
+    await this.prisma.purposeCategory.delete({ where: { id } });
+    return { ok: true };
+  }
+
+  // ==========================================
+  // OUTPASS TYPES & APPROVAL CHAINS
+  // ==========================================
+
+  @Get('outpass-types')
+  async listOutpassTypes() {
+    return this.prisma.outpassTypeConfig.findMany({
+      orderBy: { label: 'asc' },
     });
-    return outpasses.map((o) => ({
-      ...o,
-      lastTokenTs: Number(o.lastTokenTs),
-    }));
   }
 
-  @Post('outpasses/:id/cancel')
-  async cancelOutpass(
+  @Post('outpass-types')
+  async saveOutpassType(
     @Req() req: any,
-    @Param('id') id: string,
-    @Body() dto?: { reason?: string },
+    @Body()
+    dto: {
+      id?: string;
+      label: string;
+      approvalChain: string[];
+      active?: boolean;
+    },
   ) {
-    const outpass = await this.prisma.outpassRequest.findUnique({ where: { id } });
-    if (!outpass) throw new NotFoundException('Outpass not found');
+    const label = dto.label?.trim();
+    if (!label) throw new BadRequestException('Type label is required');
 
-    if (['RETURNED', 'CANCELLED', 'REJECTED'].includes(outpass.status)) {
-      throw new BadRequestException(`Cannot cancel outpass with status ${outpass.status}`);
+    if (!Array.isArray(dto.approvalChain) || dto.approvalChain.length === 0) {
+      throw new BadRequestException('Approval chain must contain at least one role ID in sequence');
     }
 
-    const updated = await this.prisma.outpassRequest.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
+    // Verify all roles in chain exist
+    const roles = await this.prisma.role.findMany({
+      where: { id: { in: dto.approvalChain } },
+    });
+    const foundIds = roles.map((r) => r.id);
+    const missing = dto.approvalChain.filter((r) => !foundIds.includes(r));
+    if (missing.length > 0) {
+      throw new BadRequestException(`Role(s) in approval chain do not exist: ${missing.join(', ')}`);
+    }
+
+    const typeId = (dto.id || '').toLowerCase().trim();
+    if (!typeId || !['normal', 'emergency'].includes(typeId)) {
+      throw new BadRequestException(
+        'Outpass types are restricted to exactly "normal" and "emergency". Adding new types is not permitted.',
+      );
+    }
+
+    const outpassType = await this.prisma.outpassTypeConfig.update({
+      where: { id: typeId },
+      data: {
+        label,
+        approvalChain: dto.approvalChain,
+        active: dto.active !== false,
+      },
     });
 
     await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
-      'OUTPASS_CANCELLED_BY_ADMIN',
-      'OutpassRequest',
-      id,
-      { reason: dto?.reason || 'Cancelled by Admin' },
+      req.user?.userId,
+      req.user?.roleId || 'admin',
+      'OUTPASS_TYPE_SAVED',
+      'OutpassTypeConfig',
+      outpassType.id,
+      { label, approvalChain: dto.approvalChain },
     );
 
-    // Serialize BigInt fields before returning
-    return { ...updated, lastTokenTs: Number(updated.lastTokenTs) };
+    return outpassType;
   }
+
+  @Post('outpass-types/:id/delete')
+  async deleteOutpassType(@Req() req: any, @Param('id') id: string) {
+    throw new BadRequestException(
+      'Default outpass types ("normal" and "emergency") cannot be deleted. You may disable them by updating their active status.',
+    );
+  }
+
+  // ==========================================
+  // SETTINGS MANAGEMENT
+  // ==========================================
 
   @Get('settings')
   async getSettings() {
@@ -852,7 +1002,10 @@ export class AdminController {
     const map: Record<string, any> = {
       collegeName: 'Christ College of Engineering, Irinjalakuda',
       minDwellMinutes: 10,
-      categories: ['Medical', 'Personal', 'Official', 'Academic', 'Emergency'],
+      defaultDurationHours: 3,
+      defaultRoleId: 'pending',
+      allowedStartTime: '06:00',
+      allowedEndTime: '21:00',
     };
     for (const s of settings) {
       try {
@@ -875,8 +1028,8 @@ export class AdminController {
     }
 
     await this.audit.append(
-      req.user?.sub,
-      'ADMIN',
+      req.user?.userId,
+      req.user?.roleId || 'admin',
       'SETTINGS_UPDATED',
       'AppSetting',
       null,
@@ -884,6 +1037,156 @@ export class AdminController {
     );
 
     return { ok: true };
+  }
+
+  // ==========================================
+  // TUTOR ASSIGNMENT & PASSES AUDIT
+  // ==========================================
+
+  @Post('tutors/assign')
+  async assignTutors(
+    @Req() req: any,
+    @Body() dto: { studentIds: string[]; tutorId: string | null },
+  ) {
+    if (!dto.studentIds || dto.studentIds.length === 0) {
+      throw new BadRequestException('studentIds must be provided');
+    }
+
+    if (dto.tutorId) {
+      const tutor = await this.prisma.user.findFirst({
+        where: { id: dto.tutorId, active: true },
+        include: { roleRef: true },
+      });
+      if (!tutor) {
+        throw new BadRequestException('Selected tutor is not active or does not exist');
+      }
+    }
+
+    const res = await this.prisma.user.updateMany({
+      where: { id: { in: dto.studentIds } },
+      data: { tutorId: dto.tutorId },
+    });
+
+    await this.prisma.student.updateMany({
+      where: { userId: { in: dto.studentIds } },
+      data: { tutorId: dto.tutorId },
+    });
+
+    await this.audit.append(
+      req.user?.userId,
+      req.user?.roleId || 'admin',
+      'TUTORS_ASSIGNED',
+      'User',
+      null,
+      { count: res.count, tutorId: dto.tutorId, studentIds: dto.studentIds },
+    );
+
+    return { count: res.count };
+  }
+
+  @Get('outpasses')
+  async listOutpasses() {
+    const outpasses = await this.prisma.outpassRequest.findMany({
+      include: {
+        student: { include: { user: true, tutor: true } },
+        studentUser: { select: { id: true, name: true, mobile: true, department: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return outpasses.map((o) => ({
+      ...o,
+      lastTokenTs: Number(o.lastTokenTs),
+    }));
+  }
+
+  @Post('outpasses/:id/cancel')
+  async cancelOutpass(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto?: { reason?: string },
+  ) {
+    const outpass = await this.prisma.outpassRequest.findUnique({
+      where: { id },
+      include: {
+        student: { include: { user: true } },
+        approvals: true,
+      },
+    });
+    if (!outpass) throw new NotFoundException('Outpass not found');
+
+    if (outpass.status === 'CANCELLED') {
+      throw new ConflictException('Outpass is already cancelled');
+    }
+    if (outpass.status === 'RETURNED') {
+      throw new ConflictException('Cannot cancel outpass after return has been recorded');
+    }
+    if (outpass.status === 'REJECTED') {
+      throw new ConflictException('Cannot cancel a rejected outpass');
+    }
+    if (outpass.status !== 'OVERDUE' && (outpass.exitAt != null || outpass.status === 'EXITED')) {
+      throw new ConflictException('Cannot cancel outpass after campus exit has been recorded');
+    }
+
+    const cancellableStatuses = ['PENDING', 'PENDING_TUTOR', 'PENDING_HOD', 'APPROVED', 'OVERDUE', 'EXPIRED'];
+    if (!cancellableStatuses.includes(outpass.status)) {
+      throw new ConflictException(
+        `Outpass can no longer be cancelled (current status: ${outpass.status})`,
+      );
+    }
+
+    const now = new Date();
+    const reason = dto?.reason || 'Cancelled by Admin';
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updateResult = await tx.outpassRequest.updateMany({
+        where: {
+          id,
+          status: { in: ['PENDING', 'PENDING_TUTOR', 'PENDING_HOD', 'APPROVED', 'OVERDUE', 'EXPIRED'] },
+          OR: [
+            { status: 'OVERDUE' },
+            { exitAt: null },
+          ],
+        },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: now,
+          cancelledBy: req.user?.userId || 'admin',
+          cancelReason: reason,
+          version: { increment: 1 },
+        },
+      });
+
+      if (updateResult.count === 0) {
+        const fresh = await tx.outpassRequest.findUnique({ where: { id } });
+        if (!fresh) throw new NotFoundException('Outpass not found');
+        if (fresh.status === 'CANCELLED') throw new ConflictException('Outpass is already cancelled');
+        if (fresh.status === 'RETURNED') {
+          throw new ConflictException('Cannot cancel outpass after return has been recorded');
+        }
+        if (fresh.status !== 'OVERDUE' && (fresh.exitAt != null || fresh.status === 'EXITED')) {
+          throw new ConflictException('Cannot cancel outpass after campus exit has been recorded');
+        }
+        throw new ConflictException(`Outpass can no longer be cancelled (current status: ${fresh.status})`);
+      }
+
+      return tx.outpassRequest.findUniqueOrThrow({ where: { id } });
+    });
+
+    await this.audit.append(
+      req.user?.userId,
+      req.user?.roleId || 'admin',
+      'OUTPASS_CANCELLED_BY_ADMIN',
+      'OutpassRequest',
+      id,
+      {
+        reason,
+        previousStatus: outpass.status,
+        cancelledAt: now.toISOString(),
+      },
+    );
+
+    return { ...updated, lastTokenTs: Number(updated.lastTokenTs) };
   }
 
   @Get('audit')

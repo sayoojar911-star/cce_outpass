@@ -7,31 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  STUDENT
-  TUTOR
-  HOD
-  GUARD
-  ADMIN
-}
-
-enum OutpassStatus {
-  PENDING_TUTOR
-  PENDING_HOD
-  APPROVED
-  EXITED
-  RETURNED
-  REJECTED
-  CANCELLED
-  EXPIRED
-  OVERDUE
-}
-
-enum OutpassType {
-  NORMAL
-  EMERGENCY
-}
-
 enum Decision {
   APPROVED
   REJECTED
@@ -42,28 +17,77 @@ enum ScanDirection {
   ENTRY
 }
 
-model User {
-  id        String    @id @default(uuid())
-  name      String
-  role      Role
-  mobile    String    @unique
-  department String?
-  year      Int?
-  division  String?
-  status    String    @default("ACTIVE")
-  student   Student?
-  devices   Device[]
-  sessions  Session[]
-  tutorOf   Student[] @relation("TutorStudents")
-  // inverse relations for department assignments
-  hodOf       Department? @relation("DeptHod")
-  deputyHodOf Department? @relation("DeptDeputyHod")
-  adminOf     Department? @relation("DeptAdmin")
-  // inverse for class tutoring
-  tutorClasses TutorClass[] @relation("TutorClasses")
-  createdAt DateTime  @default(now())
+model Role {
+  id          String   @id
+  name        String
+  description String?
+  permissions String[]
+  isSystem    Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
 
-  @@index([role, status])
+  @@map("roles")
+}
+
+model PurposeCategory {
+  id        String   @id @default(uuid())
+  label     String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("purpose_categories")
+}
+
+model OutpassTypeConfig {
+  id                  String   @id
+  label               String   @unique
+  approvalChain       String[]
+  requiresExplanation Boolean  @default(false)
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("outpass_types")
+}
+
+model User {
+  id           String      @id @default(uuid())
+  name         String
+  email        String?     @unique
+  mobile       String      @unique
+  roleId       String?
+  roleRef      Role?       @relation(fields: [roleId], references: [id])
+  role         String?
+  departmentId String?
+  deptRef      Department? @relation("DeptUsers", fields: [departmentId], references: [id])
+  department   String?
+  year         Int?
+  division     String?
+  tutorId      String?
+  tutor        User?       @relation("UserTutor", fields: [tutorId], references: [id])
+  tutees       User[]      @relation("UserTutor")
+  active       Boolean     @default(true)
+  status       String      @default("ACTIVE")
+  photoUrl     String?
+  createdAt    DateTime    @default(now())
+
+  student      Student?
+  devices      Device[]
+  sessions     Session[]
+  tutorOf      Student[]   @relation("TutorStudents")
+  hodOf        Department? @relation("DeptHod")
+  deputyHodOf  Department? @relation("DeptDeputyHod")
+  adminOf      Department? @relation("DeptAdmin")
+  tutorClasses TutorClass[] @relation("TutorClasses")
+  hodDepartments Department[] @relation("DeptHodUser")
+  outpassesRequested OutpassRequest[] @relation("OutpassStudentUser")
+  tutorOutpasses     OutpassRequest[] @relation("OutpassTutorUser")
+
+  @@index([roleId, active])
+  @@index([mobile])
   @@index([department])
 }
 
@@ -75,6 +99,7 @@ model Student {
   semester   Int
   year       Int?
   division   String?
+  photoUrl   String?
   tutorId    String?
   studentClasses StudentClass[] @relation("StudentClassStudent")
   tutor      User?            @relation("TutorStudents", fields: [tutorId], references: [id])
@@ -121,44 +146,65 @@ model Session {
 }
 
 model OutpassRequest {
-  id               String        @id @default(uuid())
-  displayId        String        @unique
-  studentId        String
-  student          Student       @relation(fields: [studentId], references: [userId])
-  type             OutpassType   @default(NORMAL)
-  status           OutpassStatus @default(PENDING_TUTOR)
-  requestedExitAt  DateTime
-  expectedReturnAt DateTime
-  destination      String
-  purposeCategory  String
-  purposeText      String?
-  validFrom        DateTime?
-  validUntil       DateTime?
-  exitAt           DateTime?
-  entryAt          DateTime?
-  exitGateId       String?
-  entryGateId      String?
-  lastTokenTs      BigInt        @default(0)
-  version          Int           @default(1)
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  approvals        Approval[]
-  gateEvents       GateEvent[]
+  id                 String        @id @default(uuid())
+  displayId          String        @unique
+  studentId          String?
+  student            Student?      @relation(fields: [studentId], references: [userId])
+  studentUserId      String?
+  studentUser        User?         @relation("OutpassStudentUser", fields: [studentUserId], references: [id])
+  tutorId            String?
+  tutor              User?         @relation("OutpassTutorUser", fields: [tutorId], references: [id])
+  typeId             String?
+  type               String        @default("NORMAL")
+  status             String        @default("PENDING")
+  currentStageIndex  Int           @default(0)
+  currentStep        Int           @default(0)
+  currentStageRoleId String?
+  approvalChain      String[]      @default([])
+  requestedExitAt    DateTime
+  expectedReturnAt   DateTime
+  destination        String
+  purposeCategory    String
+  purposeText        String?
+  validFrom          DateTime?
+  validUntil         DateTime?
+  exitAt             DateTime?
+  entryAt            DateTime?
+  exitGateId         String?
+  entryGateId        String?
+  lastTokenTs        BigInt        @default(0)
+  version            Int           @default(1)
+  passCode           String?       @unique
+  isLate             Boolean       @default(false)
+  lateMinutes        Int           @default(0)
+  cancelledAt        DateTime?
+  cancelledBy        String?
+  cancelReason       String?
+  approvalPath       String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  approvals          Approval[]
+  gateEvents         GateEvent[]
 
   @@index([status])
+  @@index([passCode])
+  @@index([tutorId, status])
+  @@index([currentStageRoleId, status])
+  @@index([studentUserId, status])
   @@index([studentId, createdAt])
   @@index([validUntil])
 }
 
 model Approval {
-  id          String   @id @default(uuid())
+  id          String         @id @default(uuid())
   requestId   String
   request     OutpassRequest @relation(fields: [requestId], references: [id])
   stage       String
+  stageRoleId String?
   approverId  String
   decision    Decision
   comment     String?
-  decidedAt   DateTime @default(now())
+  decidedAt   DateTime       @default(now())
 
   @@unique([requestId, stage])
   @@index([approverId])
@@ -172,7 +218,7 @@ model Gate {
 }
 
 model GateEvent {
-  id           String        @id @default(uuid())
+  id           String          @id @default(uuid())
   outpassId    String?
   request      OutpassRequest? @relation(fields: [outpassId], references: [id])
   gateId       String
@@ -180,10 +226,10 @@ model GateEvent {
   deviceId     String
   direction    ScanDirection
   resultCode   String
-  offline      Boolean       @default(false)
+  offline      Boolean         @default(false)
   detail       String?
-  clientScanId String        @unique
-  scannedAt    DateTime      @default(now())
+  clientScanId String          @unique
+  scannedAt    DateTime        @default(now())
 
   @@index([guardId, scannedAt])
   @@index([outpassId])
@@ -218,22 +264,24 @@ model Notification {
 }
 
 model Department {
-  id        String     @id @default(uuid())
-  code      String     @unique
-  name      String
-  hodId     String? @unique
-  deputyHodId String? @unique
-  adminId   String? @unique
-  divisions Division[]
-  createdAt DateTime   @default(now())
+  id          String     @id @default(uuid())
+  code        String     @unique
+  name        String
+  hodUserId   String?
+  hodUser     User?      @relation("DeptHodUser", fields: [hodUserId], references: [id])
+  hodId       String?    @unique
+  deputyHodId String?    @unique
+  adminId     String?    @unique
+  active      Boolean    @default(true)
+  divisions   Division[]
+  createdAt   DateTime   @default(now())
 
-  // relations
-  hod       User?      @relation("DeptHod", fields: [hodId], references: [id])
-  deputyHod User?      @relation("DeptDeputyHod", fields: [deputyHodId], references: [id])
-  admin     User?      @relation("DeptAdmin", fields: [adminId], references: [id])
+  hod         User?      @relation("DeptHod", fields: [hodId], references: [id])
+  deputyHod   User?      @relation("DeptDeputyHod", fields: [deputyHodId], references: [id])
+  admin       User?      @relation("DeptAdmin", fields: [adminId], references: [id])
 
-  // inverse for classes belonging to department
-  classes   Class[]
+  users       User[]     @relation("DeptUsers")
+  classes     Class[]
 }
 
 model Division {
@@ -247,41 +295,41 @@ model Division {
 }
 
 model AcademicYear {
-  id        String   @id @default(uuid())
-  year      Int      @unique
+  id        String     @id @default(uuid())
+  year      Int        @unique
   startDate DateTime
   endDate   DateTime
-  active    Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  active    Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   semesters Semester[]
 }
 
 model Semester {
-  id             String   @id @default(uuid())
-  name           String   // e.g., "Fall", "Spring"
+  id             String       @id @default(uuid())
+  name           String
   academicYearId String
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
   startDate      DateTime
   endDate        DateTime
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  classes Class[]
+  classes        Class[]
 }
 
 model Class {
-  id          String   @id @default(uuid())
-  name        String   // e.g., "CS101"
+  id           String     @id @default(uuid())
+  name         String
   departmentId String
-  department  Department @relation(fields: [departmentId], references: [id])
-  semesterId  String
-  semester    Semester @relation(fields: [semesterId], references: [id])
-  year        Int
-  division    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  department   Department @relation(fields: [departmentId], references: [id])
+  semesterId   String
+  semester     Semester   @relation(fields: [semesterId], references: [id])
+  year         Int
+  division     String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   studentAssignments StudentClass[]
   tutorAssignments   TutorClass[]
@@ -290,38 +338,38 @@ model Class {
 }
 
 model StudentClass {
-  id        String   @id @default(uuid())
-  studentId String
-  classId   String
-  assignedAt DateTime @default(now())
-  revokedAt DateTime?
+  id         String    @id @default(uuid())
+  studentId  String
+  classId    String
+  assignedAt DateTime  @default(now())
+  revokedAt  DateTime?
 
-  student   Student @relation("StudentClassStudent", fields: [studentId], references: [userId])
-  class     Class   @relation(fields: [classId], references: [id])
+  student    Student   @relation("StudentClassStudent", fields: [studentId], references: [userId])
+  class      Class     @relation(fields: [classId], references: [id])
 
   @@unique([studentId, classId])
   @@index([classId])
 }
 
 model TutorClass {
-  id        String   @id @default(uuid())
-  tutorId   String
-  classId   String
-  assignedAt DateTime @default(now())
-  revokedAt DateTime?
+  id         String    @id @default(uuid())
+  tutorId    String
+  classId    String
+  assignedAt DateTime  @default(now())
+  revokedAt  DateTime?
 
-  tutor     User @relation("TutorClasses", fields: [tutorId], references: [id])
-  class     Class @relation(fields: [classId], references: [id])
+  tutor      User      @relation("TutorClasses", fields: [tutorId], references: [id])
+  class      Class     @relation(fields: [classId], references: [id])
 
   @@unique([tutorId, classId, assignedAt])
   @@index([classId])
 }
 
 model RolePermission {
-  id          String @id @default(uuid())
-  role        Role
-  permission  String
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid())
+  role       String
+  permission String
+  createdAt  DateTime @default(now())
 
   @@unique([role, permission])
 }
@@ -329,7 +377,7 @@ model RolePermission {
 model SecurityEvent {
   id        String   @id @default(uuid())
   actorId   String?
-  actorRole Role?
+  actorRole String?
   eventType String
   detail    String?
   createdAt DateTime @default(now())
@@ -344,5 +392,3 @@ model AppSetting {
   value     String
   updatedAt DateTime @updatedAt
 }
-
-

@@ -42,9 +42,11 @@ class DeviceKeys {
     final algId = ASN1Sequence()
       ..add(ASN1ObjectIdentifier.fromComponentString('1.2.840.10045.2.1'))
       ..add(ASN1ObjectIdentifier.fromComponentString('1.2.840.10045.3.1.7'));
+    final q = _pub.Q;
+    if (q == null) throw StateError('Public key ECPoint is unavailable');
     final spki = ASN1Sequence()
       ..add(algId)
-      ..add(ASN1BitString(_pub.Q!.getEncoded(false)));
+      ..add(ASN1BitString(q.getEncoded(false)));
     final der = spki.encodedBytes;
     final b64 = base64.encode(der);
     final lines = <String>[];
@@ -61,11 +63,15 @@ class DeviceKeys {
       ..add(ASN1ObjectIdentifier.fromComponentString('1.2.840.10045.3.1.7'));
 
     // RFC 5915 ECPrivateKey: version(1), privateKey(OCTET STRING)
-    final privBytes = _bigIntTo32Bytes(_priv.d!);
+    final d = _priv.d;
+    if (d == null) throw StateError('Private key scalar is unavailable');
+    final privBytes = _bigIntTo32Bytes(d);
+    final q = _pub.Q;
+    if (q == null) throw StateError('Public key ECPoint is unavailable');
     final ecPrivKey = ASN1Sequence()
       ..add(ASN1Integer(BigInt.one))
       ..add(ASN1OctetString(privBytes))
-      ..add(ASN1BitString(_pub.Q!.getEncoded(false), tag: 0xA1));
+      ..add(ASN1BitString(q.getEncoded(false), tag: 0xA1));
 
     // PKCS#8 OneAsymmetricKey: version(0), privateKeyAlgorithm, privateKey
     final pkcs8 = ASN1Sequence()

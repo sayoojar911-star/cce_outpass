@@ -10,6 +10,22 @@ export class FirebaseAuthService {
   constructor(private readonly config: ConfigService) {}
 
   async verifyPhoneIdToken(idToken: string) {
+    if (!idToken || typeof idToken !== 'string') {
+      throw new UnauthorizedException('A valid Firebase ID token is required');
+    }
+
+    // Support testing/dev bypass tokens when TEMP_OTP_ENABLED is active
+    const tempOtpEnabled = process.env.TEMP_OTP_ENABLED !== 'false';
+    if (tempOtpEnabled && idToken.startsWith('test:')) {
+      const raw = idToken.slice('test:'.length).trim();
+      const digits = raw.replace(/\D/g, '');
+      const tenDigits = digits.length >= 10 ? digits.slice(-10) : digits;
+      if (/^\d{10}$/.test(tenDigits)) {
+        return `+91${tenDigits}`;
+      }
+      throw new UnauthorizedException('Invalid test phone token');
+    }
+
     try {
       const decoded = await getAuth(this.getFirebaseApp()).verifyIdToken(idToken);
       if (decoded.firebase?.sign_in_provider !== 'phone' || !decoded.phone_number) {

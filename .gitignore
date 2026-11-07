@@ -14,4 +14,6 @@ nohup.out
 .pgdata/
 .pg.log
 apps/api/public/
+apps/backups/
+baseline_trace.json
 .freebuff/
